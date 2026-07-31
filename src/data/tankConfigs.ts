@@ -41,13 +41,13 @@ export interface TankConfig {
 }
 
 const AP = (pen: number, dmg: number): ShellDefinition => ({
-  id: 'ap', name: 'AP', penetration: pen, damage: dmg, muzzleSpeed: 90,
+  id: 'ap', name: 'AP', penetration: pen, damage: dmg, muzzleSpeed: 180,
 });
 const HE = (pen: number, dmg: number, splash: number): ShellDefinition => ({
-  id: 'he', name: 'HE', penetration: pen, damage: dmg, muzzleSpeed: 70, splash,
+  id: 'he', name: 'HE', penetration: pen, damage: dmg, muzzleSpeed: 140, splash,
 });
 const HEAT = (pen: number, dmg: number): ShellDefinition => ({
-  id: 'heat', name: 'HEAT', penetration: pen, damage: dmg, muzzleSpeed: 60,
+  id: 'heat', name: 'HEAT', penetration: pen, damage: dmg, muzzleSpeed: 120,
 });
 
 export const TIGER_I: TankConfig = {

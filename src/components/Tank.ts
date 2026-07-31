@@ -17,11 +17,14 @@ export class Tank {
   /** Empty Object3D at the muzzle tip — useful as a camera anchor. */
   readonly barrelTip: THREE.Object3D;
   readonly config: TankConfig;
-  readonly maxHp: number;
+  maxHp: number;
   hp: number;
-  readonly armor: number;
+  armor: number;
+  readonly baseArmor: number;
   readonly sideArmor: number;
   readonly turretArmor: number;
+  /** Multiplier applied to shell damage fired by this tank (upgrades). */
+  damageMult = 1;
   alive = true;
   readonly name: string;
   readonly isTiger: boolean;
@@ -39,6 +42,7 @@ export class Tank {
     this.maxHp = config.hp;
     this.hp = config.hp;
     this.armor = config.hullArmor;
+    this.baseArmor = config.hullArmor;
     this.sideArmor = config.sideArmor;
     this.turretArmor = config.turretArmor;
     this.isTiger = config.id === 'tiger';
@@ -533,7 +537,17 @@ export class Tank {
 
     this.body = new CANNON.Body({ mass: 10 });
     this.body.fixedRotation = true;
+    // Hull box
     this.body.addShape(new CANNON.Box(new CANNON.Vec3(hW / 2, hH / 2, hL / 2)));
+    // Upper shape (turret or casemate) so scoped shots aimed at the turret register.
+    // Body origin is at hull center (y = hH/2), so the turret centre is offset up.
+    // Use the circumscribed half-extent so the hitbox covers the turret at ANY rotation.
+    const upperHalf = Math.sqrt((tW / 2) ** 2 + (tL / 2) ** 2);
+    const upperH = tH / 2;
+    this.body.addShape(
+      new CANNON.Box(new CANNON.Vec3(upperHalf, upperH, upperHalf)),
+      new CANNON.Vec3(0, hH / 2 + upperH, 0),
+    );
     this.body.position.set(x, hH / 2, z);
     (this.body as any).userData = { isTank: true, tankRef: this };
     world.addBody(this.body);
@@ -566,9 +580,15 @@ export class Tank {
     return this.hp <= 0;
   }
 
+  /** Optional listener fired when this tank is disposed (destroyed). */
+  static onTankDestroyed: ((tank: Tank) => void) | null = null;
+
   dispose(scene: THREE.Scene, world: CANNON.World): void {
+    if (!this.alive) return; // already disposed — avoid double callback
     this.alive = false;
     scene.remove(this.group);
     world.removeBody(this.body);
+    // Notify any listener (e.g. kill/score tracking) — fires exactly once.
+    if (Tank.onTankDestroyed) Tank.onTankDestroyed(this);
   }
 }

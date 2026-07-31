@@ -3,12 +3,13 @@ import * as THREE from 'three';
 
 import { Tank } from './Tank';
 import type { ShellDefinition } from '../data/tankConfigs';
-import { spawnExplosion, spawnBigExplosion, spawnRicochetSpark } from './Explosion';
+import { spawnExplosion, spawnBigExplosion, spawnRicochetSpark, spawnMuzzleFlash } from './Explosion';
 
-const SHELL_RADIUS = 0.12;
+const SHELL_RADIUS = 0.18;
 const SHELL_MASS = 0.5;
-/** Impact angle above which AP shells always ricochet (degrees from normal). */
-const AUTO_RICOCHET_ANGLE = 70;
+/** Impact angle above which AP shells always ricochet (degrees from normal).
+ *  Set very high (85°) so only extreme grazing shots bounce — direct hits always connect. */
+const AUTO_RICOCHET_ANGLE = 85;
 
 /**
  * A physics-driven shell. Behaviour depends on its type:
@@ -130,7 +131,7 @@ export class Shell {
         ? targetArmor / Math.max(cosAngle, 0.05)
         : targetArmor;
 
-      // AP auto-ricochets at very shallow angles; HEAT does not
+      // AP auto-ricochets only at extreme grazing angles; HEAT does not
       if (useAngle && angleDeg > AUTO_RICOCHET_ANGLE) {
         this.ricochet(v, n);
         spawnRicochetSpark(this.scene, hitPos);
@@ -139,7 +140,8 @@ export class Shell {
 
       const penChance = this.penetration / effectiveArmor;
 
-      if (penChance >= 1 || Math.random() < penChance) {
+      // Deterministic: penetrate if pen beats effective armour — no RNG bounce
+      if (penChance >= 1) {
         // ── Penetration ────────────────────────────────────
         const damage = this.damage;
 
@@ -163,17 +165,19 @@ export class Shell {
         spawnExplosion(this.scene, hitPos);
       } else {
         // ── Non-penetration ────────────────────────────────
-        if (useAngle) {
-          // AP: ricochet with partial damage
-          this.ricochet(v, n);
-          spawnRicochetSpark(this.scene, hitPos);
-          const glancing = this.damage * penChance * 0.5;
-          if (hitBlock) hitBlock.takeDamage(glancing);
-          if (hitTank) hitTank.takeDamage(glancing);
-        } else {
+        if (useAngle && this.type === 'heat') {
           // HEAT fails: small explosion on the surface, no damage
           this.destroy();
           spawnExplosion(this.scene, hitPos);
+        } else {
+          // AP non-penetration: the shell stops against the armour (no bounce-away).
+          // Clear impact spark + reduced "dented" damage so every hit registers.
+          this.destroy();
+          spawnRicochetSpark(this.scene, hitPos);
+          spawnExplosion(this.scene, hitPos);
+          const glancing = this.damage * Math.max(0.25, penChance);
+          if (hitBlock) hitBlock.takeDamage(glancing);
+          if (hitTank) hitTank.takeDamage(glancing);
         }
       }
     });
@@ -223,7 +227,7 @@ export class Shell {
   ): Shell {
     const shell = new Shell(scene, world, tank.body);
     shell.penetration = shellDef.penetration;
-    shell.damage = shellDef.damage;
+    shell.damage = shellDef.damage * tank.damageMult;
     shell.type = shellDef.id;
     shell.splash = shellDef.splash ?? 0;
 
@@ -235,6 +239,9 @@ export class Shell {
     // Get barrel tip position and direction from the Three.js hierarchy
     const tipPos = new THREE.Vector3();
     tank.barrelTip.getWorldPosition(tipPos);
+
+    // Muzzle flash at the barrel tip
+    spawnMuzzleFlash(scene, tipPos);
 
     // Barrel direction = local -Z of barrelPivot, transformed to world
     const dir = new THREE.Vector3(0, 0, -1);

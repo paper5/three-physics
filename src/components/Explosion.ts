@@ -66,6 +66,44 @@ export function spawnRicochetSpark(scene: THREE.Scene, position: THREE.Vector3):
 }
 
 /**
+ * Brief bright flash at the barrel tip when firing.
+ */
+export function spawnMuzzleFlash(scene: THREE.Scene, position: THREE.Vector3): void {
+  const geo = new THREE.SphereGeometry(0.12, 6, 6);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffdd88,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const flash = new THREE.Mesh(geo, mat);
+  flash.position.copy(position);
+  scene.add(flash);
+  (flash as any).userData = { grow: 18 };
+  activeParticles.push({ mesh: flash, velocity: new THREE.Vector3(0, 0.1, 0), lifetime: 0.12 });
+
+  // A few sparks
+  for (let i = 0; i < 6; i++) {
+    const sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa44,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 4), sparkMat);
+    spark.position.copy(position);
+    scene.add(spark);
+    activeParticles.push({
+      mesh: spark,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 4,
+        Math.random() * 2,
+        (Math.random() - 0.5) * 4,
+      ),
+      lifetime: 0.25,
+    });
+  }
+}
+
+/**
  * Spawn a large spectacular explosion (tank destroyed).
  */
 export function spawnBigExplosion(scene: THREE.Scene, position: THREE.Vector3): void {

@@ -133,6 +133,11 @@ export class TankControls {
     this.lastFireTime = performance.now() - this.reloadTime * 1000;
   }
 
+  /** Apply a reload-time multiplier (upgrade: <1 = faster reload). */
+  setReloadMult(mult: number): void {
+    if (this.tank) this.reloadTime = this.tank.config.reloadTime * mult;
+  }
+
   /** Bind the tank, scene and world that this control set operates on. */
   bind(tank: Tank, scene: THREE.Scene, world: CANNON.World): void {
     this.tank = tank;
