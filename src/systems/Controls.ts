@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 import { Shell } from '../components/Shell';
 import { Tank } from '../components/Tank';
+import type { ShellDefinition } from '../data/tankConfigs';
 
 /**
  * Drives a Tank via WASD and tracks the mouse cursor for turret aiming.
@@ -36,8 +37,18 @@ export class TankControls {
   sniperAimY = 0;
   private readonly sniperSensitivity = 0.0012;
 
+  /** Index into the tank's shells array. */
+  currentShellIndex = 0;
+
+  /** The currently selected shell definition. */
+  get currentShell(): ShellDefinition {
+    return this.tank?.config.shells[this.currentShellIndex] ?? this.tank?.config.shells[0]!;
+  }
+
   /** Callback fired each time a shell is spawned. */
   onShellFired?: () => void;
+  /** Callback when the player switches shell type. */
+  onShellSwitch?: (shell: ShellDefinition) => void;
   /** Callback for scroll-wheel zoom: +1 = zoom in, -1 = zoom out. */
   onZoom?: (dir: number) => void;
 
@@ -54,6 +65,14 @@ export class TankControls {
       this.keys.add(e.key.toLowerCase());
       if (['w', 'a', 's', 'd', ' '].includes(e.key.toLowerCase())) {
         e.preventDefault();
+      }
+      // Shell switching: 1 / 2 / 3
+      if (this.tank && ['1', '2', '3'].includes(e.key)) {
+        const idx = Number(e.key) - 1;
+        if (idx < this.tank.config.shells.length) {
+          this.currentShellIndex = idx;
+          this.onShellSwitch?.(this.currentShell);
+        }
       }
     });
 
@@ -96,12 +115,7 @@ export class TankControls {
       if (!this.tank || !this.scene || !this.world) return;
       if (this.reloadProgress < 1) return;
 
-      const shell = Shell.fire(
-        this.scene, this.world, this.tank,
-        this.tank.config.muzzleSpeed,
-        this.tank.config.shellPenetration,
-        this.tank.config.shellDamage,
-      );
+      const shell = Shell.fire(this.scene, this.world, this.tank, this.currentShell);
       this.shells.push(shell);
       this.lastFireTime = performance.now();
       this.onShellFired?.();
@@ -112,6 +126,11 @@ export class TankControls {
   get reloadProgress(): number {
     const elapsed = (performance.now() - this.lastFireTime) / 1000;
     return Math.min(1, elapsed / this.reloadTime);
+  }
+
+  /** Instantly complete the reload (ammo consumable). */
+  forceReloadReady(): void {
+    this.lastFireTime = performance.now() - this.reloadTime * 1000;
   }
 
   /** Bind the tank, scene and world that this control set operates on. */

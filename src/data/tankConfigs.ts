@@ -1,9 +1,20 @@
 /**
- * Semi-realistic tank configurations for Tiger I and KV-1.
+ * Tank configurations with per-tank shell loadouts (AP / HE / HEAT).
  *
  * Armour values are approximate front-hull thickness (mm).
- * Penetration values are for AP shells at ~500m range.
  */
+
+export type ShellKind = 'ap' | 'he' | 'heat';
+
+export interface ShellDefinition {
+  id: ShellKind;
+  name: string;
+  penetration: number; // mm
+  damage: number;
+  muzzleSpeed: number; // units/s
+  /** HE only: splash radius in units. */
+  splash?: number;
+}
 
 export interface TankConfig {
   id: string;
@@ -24,31 +35,38 @@ export interface TankConfig {
   hullArmor: number;  // mm — front hull
   sideArmor: number;  // mm — side hull
   turretArmor: number; // mm — front turret
-  shellPenetration: number; // mm — AP shell at 500m
-  shellDamage: number;
   reloadTime: number;  // seconds
-  muzzleSpeed: number; // units/s
+  /** Available shell types for this tank. */
+  shells: ShellDefinition[];
 }
+
+const AP = (pen: number, dmg: number): ShellDefinition => ({
+  id: 'ap', name: 'AP', penetration: pen, damage: dmg, muzzleSpeed: 90,
+});
+const HE = (pen: number, dmg: number, splash: number): ShellDefinition => ({
+  id: 'he', name: 'HE', penetration: pen, damage: dmg, muzzleSpeed: 70, splash,
+});
+const HEAT = (pen: number, dmg: number): ShellDefinition => ({
+  id: 'heat', name: 'HEAT', penetration: pen, damage: dmg, muzzleSpeed: 60,
+});
 
 export const TIGER_I: TankConfig = {
   id: 'tiger',
   name: 'Tiger I',
   nation: 'Germany',
 
-  hullColor: 0x7a7a72,  // dark gray / field-gray
+  hullColor: 0x7a7a72,
   turretColor: 0x6e6e66,
   hullDimensions: [4.2, 0.85, 6.4],
   turretDimensions: [2.6, 0.45, 2.6],
   barrelLength: 3.8,
 
   hp: 1000,
-  hullArmor: 100,  // 100mm front plate
-  sideArmor: 80,   // 80mm side
-  turretArmor: 100, // 100mm front mantlet
-  shellPenetration: 120, // 88mm KwK 36 AP at 500m
-  shellDamage: 150,
-  reloadTime: 3.8,  // ~16 rounds/min
-  muzzleSpeed: 90,
+  hullArmor: 100,
+  sideArmor: 80,
+  turretArmor: 100,
+  reloadTime: 3.8,
+  shells: [AP(120, 150), HE(30, 200, 2.0)],
 };
 
 export const KV_1: TankConfig = {
@@ -56,20 +74,18 @@ export const KV_1: TankConfig = {
   name: 'KV-1',
   nation: 'USSR',
 
-  hullColor: 0x4a6b2a,  // soviet green
+  hullColor: 0x4a6b2a,
   turretColor: 0x557733,
   hullDimensions: [3.8, 0.9, 5.8],
   turretDimensions: [2.8, 0.5, 2.8],
   barrelLength: 3.0,
 
   hp: 1200,
-  hullArmor: 75,   // 75mm front (some variants 90)
-  sideArmor: 75,   // 75mm side
-  turretArmor: 75,  // 75mm front
-  shellPenetration: 80, // 76mm F-34 AP at 500m
-  shellDamage: 110,
-  reloadTime: 3.0,  // ~20 rounds/min
-  muzzleSpeed: 90,
+  hullArmor: 75,
+  sideArmor: 75,
+  turretArmor: 75,
+  reloadTime: 3.0,
+  shells: [AP(80, 110), HE(28, 170, 2.5)],
 };
 
 export const SHERMAN: TankConfig = {
@@ -77,20 +93,18 @@ export const SHERMAN: TankConfig = {
   name: 'M4A3E8 Sherman',
   nation: 'USA',
 
-  hullColor: 0x5a6b3a,  // olive drab
+  hullColor: 0x5a6b3a,
   turretColor: 0x4f5f33,
   hullDimensions: [3.5, 0.8, 5.8],
   turretDimensions: [2.5, 0.4, 2.5],
   barrelLength: 3.2,
 
   hp: 950,
-  hullArmor: 64,   // ~64mm glacis
-  sideArmor: 38,   // 38mm side
-  turretArmor: 76, // 76mm mantlet
-  shellPenetration: 105, // 76mm M1A2 AP at 500m
-  shellDamage: 130,
+  hullArmor: 64,
+  sideArmor: 38,
+  turretArmor: 76,
   reloadTime: 3.4,
-  muzzleSpeed: 90,
+  shells: [AP(105, 130), HE(32, 180, 2.0)],
 };
 
 export const T34_85: TankConfig = {
@@ -98,42 +112,39 @@ export const T34_85: TankConfig = {
   name: 'T-34/85',
   nation: 'USSR',
 
-  hullColor: 0x55602e,  // soviet green-brown
+  hullColor: 0x55602e,
   turretColor: 0x4d5a2a,
   hullDimensions: [3.6, 0.85, 6.0],
   turretDimensions: [2.6, 0.5, 2.6],
   barrelLength: 3.6,
 
   hp: 900,
-  hullArmor: 60,   // 60mm sloped glacis
-  sideArmor: 45,   // 45mm side
-  turretArmor: 90, // 90mm turret front
-  shellPenetration: 120, // 85mm ZiS-S-53 AP at 500m
-  shellDamage: 135,
+  hullArmor: 60,
+  sideArmor: 45,
+  turretArmor: 90,
   reloadTime: 3.5,
-  muzzleSpeed: 90,
+  shells: [AP(120, 135), HE(35, 190, 2.2)],
 };
 
 export const SU_152: TankConfig = {
   id: 'su152',
   name: 'SU-152',
   nation: 'USSR',
-  hasTurret: false, // casemate tank destroyer
+  hasTurret: false,
 
   hullColor: 0x4a5a28,
   turretColor: 0x42522a,
   hullDimensions: [3.6, 1.1, 6.2],
-  turretDimensions: [2.4, 0.7, 2.0], // fixed casemate
+  turretDimensions: [2.4, 0.7, 2.0],
   barrelLength: 2.8,
 
   hp: 950,
-  hullArmor: 75,   // 75mm casemate front
-  sideArmor: 60,   // 60mm side
-  turretArmor: 75, // casemate front
-  shellPenetration: 130, // 152mm ML-20S HEAT
-  shellDamage: 350, // massive howitzer damage
-  reloadTime: 8.0, // slow
-  muzzleSpeed: 90,
+  hullArmor: 75,
+  sideArmor: 60,
+  turretArmor: 75,
+  reloadTime: 8.0,
+  // A howitzer: no AP, big HE + HEAT
+  shells: [HE(45, 350, 3.5), HEAT(130, 300)],
 };
 
 export const BOB_SEMPLE: TankConfig = {
@@ -141,18 +152,17 @@ export const BOB_SEMPLE: TankConfig = {
   name: 'Bob Semple',
   nation: 'New Zealand',
 
-  hullColor: 0x8a6a4a,  // rusty corrugated iron
+  hullColor: 0x8a6a4a,
   turretColor: 0x7a5a3a,
-  hullDimensions: [2.8, 0.7, 4.2],  // tiny tractor chassis
-  turretDimensions: [1.4, 0.3, 1.4], // tiny cupola
-  barrelLength: 1.4,  // machine gun barrel
+  hullDimensions: [2.8, 0.7, 4.2],
+  turretDimensions: [1.4, 0.3, 1.4],
+  barrelLength: 1.4,
 
   hp: 400,
-  hullArmor: 8,    // corrugated iron!
-  sideArmor: 6,    // even less on the sides
+  hullArmor: 8,
+  sideArmor: 6,
   turretArmor: 8,
-  shellPenetration: 20, // .303 machine gun
-  shellDamage: 30,
-  reloadTime: 2.0, // fast fire rate
-  muzzleSpeed: 90,
+  reloadTime: 2.0,
+  // Just a machine gun — AP only
+  shells: [AP(20, 30)],
 };

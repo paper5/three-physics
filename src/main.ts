@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 import { Block } from './components/Block';
+import { Consumable } from './components/Consumable';
+import type { ConsumableKind } from './components/Consumable';
 import { createGround } from './components/Ground';
 import { updateParticles } from './components/Explosion';
 import { Tank } from './components/Tank';
@@ -84,12 +86,16 @@ function startGame(choice: 'tiger' | 'kv1' | 'sherman' | 't34' | 'su152' | 'bobs
   controls.bind(playerTank, scene, physicsWorld);
   TankControls.setupBody(playerTank.body);
   controls.onShellFired = () => hud.incrementShells();
+  controls.onShellSwitch = (shell) => hud.setShell(shell.name, controls.currentShellIndex);
   controls.onZoom = (dir) => {
     followCam.distance = Math.max(6, Math.min(30, followCam.distance - dir * 2));
     followCam.height = Math.max(4, Math.min(20, followCam.height - dir * 1.2));
   };
 
   followCam = new FollowCamera(camera, { distance: 14, height: 10 });
+
+  // Initial shell indicator
+  hud.setShell(playerConfig.shells[0].name, 0);
 
   // Small destructible wall near flag (not the massive fortress)
   blocks = generateFortress(scene, physicsWorld, -28, 0);
@@ -127,19 +133,60 @@ function findAimTarget(obj: THREE.Object3D): Tank | Block | null {
 
 // ── Animation loop ─────────────────────────────────────────
 const clock = new THREE.Clock();
-const SPEED = 10;
+let SPEED = 10;
 const TURN_SPEED = 2;
+let speedBoostTimer = 0;
+
+// ── Consumables ───────────────────────────────────────────
+const consumables: Consumable[] = [];
+let consumableSpawnTimer = 0;
+let elapsed = 0;
+
+function spawnConsumable(): void {
+  const kinds: ConsumableKind[] = ['reload', 'heal', 'speed'];
+  const kind = kinds[Math.floor(Math.random() * kinds.length)];
+  // Random position within the play area (avoid bases)
+  const x = (Math.random() - 0.5) * 80;
+  const z = (Math.random() - 0.5) * 80;
+  const c = new Consumable(scene, physicsWorld, new THREE.Vector3(x, 0.5, z), kind);
+  consumables.push(c);
+}
+
+function applyConsumable(c: Consumable): void {
+  switch (c.kind) {
+    case 'reload':
+      hud.showMessage('⚡ AMMO! Reload ready');
+      // Force reload to complete by advancing lastFireTime
+      // (controls.lastFireTime is private; use a public helper below)
+      controls.forceReloadReady();
+      break;
+    case 'heal':
+      playerTank.hp = Math.min(playerTank.maxHp, playerTank.hp + playerTank.maxHp * 0.4);
+      hud.showMessage('💊 REPAIR! +40% HP');
+      break;
+    case 'speed':
+      speedBoostTimer = 5;
+      hud.showMessage('⚡ SPEED! +60% for 5s');
+      break;
+  }
+  c.destroy(scene, physicsWorld);
+}
 
 function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
   const fixedDt = 1 / 60;
+  elapsed += fixedDt;
+
+  // Speed boost effect
+  if (speedBoostTimer > 0) speedBoostTimer -= fixedDt;
+  const activeSpeed = SPEED * (speedBoostTimer > 0 ? 1.6 : 1);
 
   physicsWorld.step(fixedDt, delta, 3);
 
   controls.updateSniperAim(fixedDt);
-  controls.updateTank(SPEED, TURN_SPEED, camera);
+  controls.updateTank(activeSpeed, TURN_SPEED, camera);
   // Barrel pitch: sniper aim in sniper mode, auto-aim in third-person
   const pitch = controls.sniperMode ? controls.sniperAimY : controls.autoBarrelPitch;
   playerTank.setBarrelPitch(pitch);
@@ -147,6 +194,22 @@ function animate() {
 
   controls.updateShells(fixedDt);
   updateParticles(scene, fixedDt);
+
+  // ── Consumables: spawn + pickup ───────────────────────
+  consumableSpawnTimer -= fixedDt;
+  if (consumableSpawnTimer <= 0 && consumables.length < 5) {
+    spawnConsumable();
+    consumableSpawnTimer = 12; // every ~12s, up to 5 on map
+  }
+  for (let i = consumables.length - 1; i >= 0; i--) {
+    const c = consumables[i];
+    c.update(fixedDt, elapsed);
+    const dist = c.mesh.position.distanceTo(playerTank.group.position);
+    if (dist < 2.2) {
+      applyConsumable(c);
+      consumables.splice(i, 1);
+    }
+  }
 
   // ── Block cleanup ─────────────────────────────────────
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -231,16 +294,20 @@ function animate() {
     const angleDeg = Math.acos(Math.min(cosAngle, 1)) * (180 / Math.PI);
 
     const armor = target instanceof Tank ? target.armor : target.armor;
-    const effectiveArmor = armor / Math.max(cosAngle, 0.05);
-    const pen = playerConfig.shellPenetration;
+    // HEAT ignores angle (flat armor); AP/HE use effective armor
+    const shell = controls.currentShell;
+    const effectiveArmor = shell.id === 'heat'
+      ? armor
+      : armor / Math.max(cosAngle, 0.05);
+    const pen = shell.penetration;
     const penChance = pen / effectiveArmor;
 
     aimInfo = {
       name: target instanceof Tank ? target.name : 'WALL',
       armor, angleDeg, effectiveArmor, penetration: pen,
-      willPen: penChance >= 1 || angleDeg > 70,
+      willPen: penChance >= 1 || (shell.id === 'he') || angleDeg > 70,
       penChance: Math.min(1, penChance),
-      autoRicochet: angleDeg > 70,
+      autoRicochet: shell.id === 'ap' && angleDeg > 70,
       ricochetChance: Math.max(0, 1 - penChance),
     };
     break;
@@ -256,6 +323,7 @@ function animate() {
   hud.updateTank(playerTank);
   hud.updateEnemyTank(enemyTank);
   hud.updateReload(controls.reloadProgress, controls.reloadProgress >= 1);
+  hud.updateMessage(fixedDt);
 
   composer.render();
 }

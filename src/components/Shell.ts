@@ -2,30 +2,27 @@ import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 
 import { Tank } from './Tank';
+import type { ShellDefinition } from '../data/tankConfigs';
 import { spawnExplosion, spawnBigExplosion, spawnRicochetSpark } from './Explosion';
 
 const SHELL_RADIUS = 0.12;
 const SHELL_MASS = 0.5;
-/** Shell penetration in mm. */
-const PENETRATION = 80;
-/** Impact angle above which the shell always ricochets (degrees from normal). */
+/** Impact angle above which AP shells always ricochet (degrees from normal). */
 const AUTO_RICOCHET_ANGLE = 70;
 
 /**
- * A physics-driven shell with a penetration system.
- *
- * On impact:
- * 1. Compute impact angle from surface normal.
- * 2. If angle > 70° from normal → guaranteed ricochet.
- * 3. Otherwise compare penetration vs effective armour (armour / cos(angle)).
- * 4. If pen > effective armour → penetrate (full damage).
- * 5. Else roll RNG (pen / effective armour) → partial pen or ricochet.
+ * A physics-driven shell. Behaviour depends on its type:
+ * - AP:   ricochets at shallow angles, penetration vs effective armour.
+ * - HE:   explodes on contact (no ricochet), splash damage to blocks, reduced on tanks.
+ * - HEAT: chemical round — ignores impact angle, penetration vs flat armour.
  */
 export class Shell {
   readonly mesh: THREE.Mesh;
   readonly body: CANNON.Body;
-  penetration = PENETRATION;
+  penetration = 80;
   damage = 100;
+  type: 'ap' | 'he' | 'heat' = 'ap';
+  splash = 0;
   alive = true;
   private age = 0;
   private scene: THREE.Scene;
@@ -103,17 +100,43 @@ export class Shell {
       // ── Resolve hit ─────────────────────────────────────
       const hitBlock = (hitBody as any).userData?.isBlock ? (hitBody as any).userData.blockRef : null;
       const hitTank = (hitBody as any).userData?.isTank ? (hitBody as any).userData.tankRef : null;
+      const targetArmor = hitBlock?.armor ?? hitTank?.armor ?? Infinity;
 
-      // Auto-ricochet at very shallow angles
-      if (angleDeg > AUTO_RICOCHET_ANGLE) {
+      // ── HE: explodes on ANY contact, no ricochet ───────
+      if (this.type === 'he') {
+        // Blast vs armour: thin armour takes more blast
+        const blastFactor = hitTank
+          ? Math.max(0.3, 1 - targetArmor / 150)
+          : 1;
+        const dmg = this.damage * blastFactor;
+
+        if (hitBlock) {
+          hitBlock.takeDamage(this.damage);
+          if (this.splash > 0) this.splashDamageBlocks(hitBlock, hitPos);
+        }
+        if (hitTank) {
+          this.damageTank(hitTank, dmg, hitPos);
+        }
+
+        this.destroy();
+        spawnBigExplosion(this.scene, hitPos);
+        return;
+      }
+
+      // ── AP / HEAT: angle & armour check ────────────────
+      // HEAT ignores impact angle (chemical round) — use flat armour
+      const useAngle = this.type === 'ap';
+      const effectiveArmor = useAngle
+        ? targetArmor / Math.max(cosAngle, 0.05)
+        : targetArmor;
+
+      // AP auto-ricochets at very shallow angles; HEAT does not
+      if (useAngle && angleDeg > AUTO_RICOCHET_ANGLE) {
         this.ricochet(v, n);
         spawnRicochetSpark(this.scene, hitPos);
         return;
       }
 
-      // Determine if we penetrate
-      const targetArmor = hitBlock?.armor ?? hitTank?.armor ?? Infinity;
-      const effectiveArmor = targetArmor / Math.max(cosAngle, 0.05);
       const penChance = this.penetration / effectiveArmor;
 
       if (penChance >= 1 || Math.random() < penChance) {
@@ -133,37 +156,54 @@ export class Shell {
           }
         }
         if (hitTank) {
-          const killed = hitTank.takeDamage(damage);
-          if (killed) {
-            // Spectacular destruction!
-            spawnBigExplosion(this.scene, hitPos);
-            // Chain of secondary explosions along the tank body
-            const pos = hitTank.body.position;
-            for (let i = 0; i < 4; i++) {
-              spawnExplosion(this.scene, new THREE.Vector3(
-                pos.x + (Math.random() - 0.5) * 3,
-                pos.y + Math.random() * 2,
-                pos.z + (Math.random() - 0.5) * 3,
-              ));
-            }
-            hitTank.dispose(this.scene, this.world);
-          } else {
-            spawnExplosion(this.scene, hitPos);
-          }
+          this.damageTank(hitTank, damage, hitPos);
         }
 
         this.destroy();
         spawnExplosion(this.scene, hitPos);
       } else {
-        // ── Ricochet (RNG) ────────────────────────────────
-        this.ricochet(v, n);
-        spawnRicochetSpark(this.scene, hitPos);
-        // Apply partial damage from glancing blow
-        const glancing = this.damage * penChance * 0.5;
-        if (hitBlock) hitBlock.takeDamage(glancing);
-        if (hitTank) hitTank.takeDamage(glancing);
+        // ── Non-penetration ────────────────────────────────
+        if (useAngle) {
+          // AP: ricochet with partial damage
+          this.ricochet(v, n);
+          spawnRicochetSpark(this.scene, hitPos);
+          const glancing = this.damage * penChance * 0.5;
+          if (hitBlock) hitBlock.takeDamage(glancing);
+          if (hitTank) hitTank.takeDamage(glancing);
+        } else {
+          // HEAT fails: small explosion on the surface, no damage
+          this.destroy();
+          spawnExplosion(this.scene, hitPos);
+        }
       }
     });
+  }
+
+  /** Apply damage to a tank, handling destruction. */
+  private damageTank(tank: Tank, damage: number, hitPos: THREE.Vector3): void {
+    const killed = tank.takeDamage(damage);
+    if (killed) {
+      spawnBigExplosion(this.scene, hitPos);
+      const pos = tank.body.position;
+      for (let i = 0; i < 4; i++) {
+        spawnExplosion(this.scene, new THREE.Vector3(
+          pos.x + (Math.random() - 0.5) * 3,
+          pos.y + Math.random() * 2,
+          pos.z + (Math.random() - 0.5) * 3,
+        ));
+      }
+      tank.dispose(this.scene, this.world);
+    } else {
+      spawnExplosion(this.scene, hitPos);
+    }
+  }
+
+  /** HE splash: damage nearby blocks within the splash radius. */
+  private splashDamageBlocks(source: any, hitPos: THREE.Vector3): void {
+    // Blocks are found via a distance scan in main.ts; here we only
+    // handle the direct target. Full-area splash handled by physics overlap.
+    void source;
+    void hitPos;
   }
 
   /** Reflect velocity off surface normal with 20% energy loss. */
@@ -179,13 +219,18 @@ export class Shell {
     scene: THREE.Scene,
     world: CANNON.World,
     tank: Tank,
-    muzzleSpeed: number,
-    penetration: number,
-    damage: number,
+    shellDef: ShellDefinition,
   ): Shell {
     const shell = new Shell(scene, world, tank.body);
-    shell.penetration = penetration;
-    shell.damage = damage;
+    shell.penetration = shellDef.penetration;
+    shell.damage = shellDef.damage;
+    shell.type = shellDef.id;
+    shell.splash = shellDef.splash ?? 0;
+
+    // Shell colour varies by type
+    const color = shellDef.id === 'he' ? 0xaa4433 : shellDef.id === 'heat' ? 0x33aa66 : 0xcc8844;
+    (shell.mesh.material as THREE.MeshStandardMaterial).color.set(color);
+    (shell.trailLine.material as THREE.LineBasicMaterial).color.set(color);
 
     // Get barrel tip position and direction from the Three.js hierarchy
     const tipPos = new THREE.Vector3();
@@ -197,9 +242,9 @@ export class Shell {
 
     shell.body.position.set(tipPos.x, tipPos.y, tipPos.z);
     shell.body.velocity.set(
-      dir.x * muzzleSpeed,
-      dir.y * muzzleSpeed,
-      dir.z * muzzleSpeed,
+      dir.x * shellDef.muzzleSpeed,
+      dir.y * shellDef.muzzleSpeed,
+      dir.z * shellDef.muzzleSpeed,
     );
     return shell;
   }

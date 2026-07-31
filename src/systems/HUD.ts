@@ -40,8 +40,23 @@ export class HUD {
   private _blocksDestroyed = 0;
   private hitMarker: HTMLElement;
   private scopeOverlay: HTMLElement;
+  private shellEl: HTMLElement;
+  private msgEl: HTMLElement;
+  private msgTimer = 0;
 
   constructor(container: HTMLElement = document.body) {
+    // ── Shell indicator (bottom right) ────────────────────
+    const shell = document.createElement('div');
+    shell.id = 'hud-shell';
+    shell.innerHTML = `<span id="hud-shell-name">AP</span><span id="hud-shell-hint">[1]</span>`;
+    container.appendChild(shell);
+    this.shellEl = shell;
+
+    // ── Pickup messages (top center) ──────────────────────
+    const msg = document.createElement('div');
+    msg.id = 'hud-msg';
+    container.appendChild(msg);
+    this.msgEl = msg;
     // ── Player HP bar (top left) ──────────────────────────
     const hpContainer = document.createElement('div');
     hpContainer.id = 'hud-hp';
@@ -232,6 +247,32 @@ export class HUD {
     // Force reflow so the animation replays
     void this.hitMarker.offsetWidth;
     this.hitMarker.classList.add('hit');
+  }
+
+  /** Update the shell type indicator. */
+  setShell(name: string, index: number): void {
+    this.shellEl.innerHTML =
+      `<span id="hud-shell-name">${name}</span><span id="hud-shell-hint">[${index + 1}]</span>`;
+    // Colour-code the shell type
+    const el = this.shellEl.querySelector('#hud-shell-name') as HTMLElement;
+    el.style.color = name === 'HE' ? '#f77' : name === 'HEAT' ? '#4f7' : '#fc8';
+  }
+
+  /** Show a transient pickup message. */
+  showMessage(text: string, duration = 2): void {
+    this.msgEl.textContent = text;
+    this.msgEl.style.opacity = '1';
+    this.msgTimer = duration;
+  }
+
+  /** Fade the message. Call each frame. */
+  updateMessage(dt: number): void {
+    if (this.msgTimer > 0) {
+      this.msgTimer -= dt;
+      if (this.msgTimer <= 0) {
+        this.msgEl.style.opacity = '0';
+      }
+    }
   }
 
   get shellsFired(): number { return this._shellsFired; }
