@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three Physics</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+      canvas { display: block; }
+
+      /* ── HP bar (top left) ────────────────────────────── */
+      #hud-hp {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 12px;
+        color: #ccc;
+        background: rgba(0,0,0,0.6);
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        user-select: none;
+        pointer-events: none;
+        z-index: 10;
+        min-width: 240px;
+      }
+      #hud-hp-label {
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: #4a4;
+        min-width: 38px;
+      }
+      #hud-hp-track {
+        flex: 1;
+        height: 10px;
+        background: rgba(255,255,255,0.12);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      #hud-hp-fill {
+        height: 100%;
+        width: 100%;
+        background: #4a4;
+        border-radius: 5px;
+        transition: width 0.1s, background-color 0.15s;
+      }
+      #hud-hp-text {
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: #aaa;
+        min-width: 70px;
+        text-align: right;
+      }
+
+      /* ── Enemy HP bar (below player HP) ──────────────── */
+      #hud-enemy-hp {
+        position: fixed;
+        top: 54px;
+        left: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 12px;
+        color: #ccc;
+        background: rgba(0,0,0,0.6);
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        user-select: none;
+        pointer-events: none;
+        z-index: 10;
+        min-width: 240px;
+      }
+      #hud-enemy-label {
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: #a44;
+        min-width: 38px;
+      }
+      #hud-enemy-track {
+        flex: 1;
+        height: 10px;
+        background: rgba(255,255,255,0.12);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      #hud-enemy-fill {
+        height: 100%;
+        width: 100%;
+        background: #a44;
+        border-radius: 5px;
+        transition: width 0.1s, background-color 0.15s;
+      }
+      #hud-enemy-text {
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: #aaa;
+        min-width: 70px;
+        text-align: right;
+      }
+
+      /* ── Stats (top right) ────────────────────────────── */
+      #hud-stats {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 13px;
+        color: #b0b8c0;
+        background: rgba(0,0,0,0.55);
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.06);
+        user-select: none;
+        pointer-events: none;
+        line-height: 1.7;
+        z-index: 10;
+      }
+      #hud-stats span {
+        color: #e8eef4;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── Reload indicator (bottom center) ─────────────── */
+      #hud-reload {
+        position: fixed;
+        bottom: 40px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        pointer-events: none;
+        user-select: none;
+      }
+      #hud-reload-svg {
+        width: 44px;
+        height: 44px;
+        transform: rotate(-90deg);
+      }
+      #hud-reload-track {
+        fill: none;
+        stroke: rgba(255,255,255,0.1);
+        stroke-width: 5;
+      }
+      #hud-reload-fill {
+        fill: none;
+        stroke: #4af;
+        stroke-width: 5;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.05s linear;
+      }
+      #hud-reload-text {
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        color: #4f4;
+      }
+
+      /* ── Crosshair ────────────────────────────────────── */
+      #hud-crosshair {
+        position: fixed;
+        pointer-events: none;
+        z-index: 10;
+        color: rgba(200,220,255,0.55);
+        font-size: 20px;
+        line-height: 1;
+        transform: translate(-50%, -50%);
+        text-shadow: 0 0 6px rgba(0,0,0,0.8);
+      }
+
+      /* ── Hit marker ───────────────────────────────────── */
+      #hud-hitmarker {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        pointer-events: none;
+        z-index: 11;
+        color: #fff;
+        font-size: 30px;
+        font-weight: 700;
+        text-shadow: 0 0 8px rgba(255,80,0,0.8);
+        opacity: 0;
+        transition: none;
+      }
+      #hud-hitmarker.hit {
+        animation: hitPulse 0.3s ease-out;
+      }
+      @keyframes hitPulse {
+        0%   { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+      }
+
+      /* ── Aim info panel (bottom center, above reload) ── */
+      #hud-aim {
+        position: fixed;
+        bottom: 95px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        user-select: none;
+        pointer-events: none;
+        z-index: 10;
+        text-align: center;
+        min-width: 200px;
+      }
+      #hud-aim-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #e8eef4;
+        margin-bottom: 2px;
+      }
+      #hud-aim-details {
+        font-size: 10px;
+        color: #999;
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        margin-bottom: 2px;
+      }
+      #hud-aim-details span {
+        color: #bbb;
+      }
+      #hud-aim-details span span {
+        color: #e8eef4;
+        font-weight: 600;
+      }
+      #hud-aim-status {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      /* ── Tank selector overlay ────────────────────────── */
+      #hud-selector {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10,10,20,0.92);
+        z-index: 100;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        transition: opacity 0.5s;
+      }
+      #hud-selector.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #hud-selector h1 {
+        color: #d0d8e0;
+        font-size: 24px;
+        font-weight: 300;
+        letter-spacing: 3px;
+        margin-bottom: 30px;
+        text-transform: uppercase;
+      }
+      .sel-cards {
+        display: flex;
+        gap: 30px;
+      }
+      .sel-card {
+        width: 220px;
+        padding: 24px;
+        border-radius: 10px;
+        border: 2px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+        cursor: pointer;
+        text-align: center;
+        transition: border-color 0.2s, background 0.2s, transform 0.15s;
+      }
+      .sel-card:hover {
+        border-color: rgba(255,255,255,0.3);
+        background: rgba(255,255,255,0.07);
+        transform: translateY(-4px);
+      }
+      .sel-card h2 {
+        color: #e8eef4;
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .sel-card .nation {
+        font-size: 11px;
+        color: #888;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .sel-card .stats {
+        font-size: 12px;
+        color: #aaa;
+        line-height: 1.9;
+        text-align: left;
+      }
+      .sel-card .stats span {
+        color: #ddd;
+        font-weight: 600;
+      }
+      .sel-tiger { border-color: rgba(140,140,130,0.3); }
+      .sel-kv1   { border-color: rgba(80,120,60,0.3); }
+    </style>
+  </head>
+  <body>
+    <!-- Tank selector overlay -->
+    <div id="hud-selector">
+      <h1>Select Your Tank</h1>
+      <div class="sel-cards">
+        <div class="sel-card sel-tiger" data-tank="tiger">
+          <h2>Tiger I</h2>
+          <div class="nation">Germany</div>
+          <div class="stats">
+            Armour: <span>100mm</span><br>
+            Gun: <span>88mm KwK 36</span><br>
+            Penetration: <span>120mm</span><br>
+            HP: <span>1000</span><br>
+            Reload: <span>3.8s</span>
+          </div>
+        </div>
+        <div class="sel-card sel-kv1" data-tank="kv1">
+          <h2>KV-1</h2>
+          <div class="nation">USSR</div>
+          <div class="stats">
+            Armour: <span>75mm</span><br>
+            Gun: <span>76mm F-34</span><br>
+            Penetration: <span>80mm</span><br>
+            HP: <span>1200</span><br>
+            Reload: <span>3.0s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
