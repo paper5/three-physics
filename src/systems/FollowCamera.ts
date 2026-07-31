@@ -58,7 +58,8 @@ export class FollowCamera {
   }
 
   private updateSniper(tank: Tank): void {
-    this.camera.fov = 12;
+    // Moderate zoom — not too tight
+    this.camera.fov = 22;
     this.camera.updateProjectionMatrix();
 
     const tipPos = new THREE.Vector3();

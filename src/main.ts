@@ -1,11 +1,12 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 
 import { Block } from './components/Block';
 import { createGround } from './components/Ground';
 import { updateParticles } from './components/Explosion';
 import { Tank } from './components/Tank';
 import { generateFortress } from './components/TowerGenerator';
-import { TIGER_I, KV_1 } from './data/tankConfigs';
+import { TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE } from './data/tankConfigs';
 import type { TankConfig } from './data/tankConfigs';
 import { createPhysicsWorld } from './physics/world';
 import { createCamera } from './systems/Camera';
@@ -49,14 +50,35 @@ let controls: TankControls;
 let followCam: FollowCamera;
 let blocks: Block[];
 let aimables: (Tank | Block)[];
+let respawnTimer = -1;
 
-function startGame(choice: 'tiger' | 'kv1') {
-  if (choice === 'tiger') { playerConfig = TIGER_I; enemyConfig = KV_1; }
-  else { playerConfig = KV_1; enemyConfig = TIGER_I; }
+const TANK_POOL: TankConfig[] = [TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE];
+
+/** Spawn a new random enemy tank (different from the player's) at the enemy base. */
+function spawnEnemy(): void {
+  const options = TANK_POOL.filter((c) => c.id !== playerConfig.id);
+  enemyConfig = options[Math.floor(Math.random() * options.length)];
+  enemyTank = new Tank(scene, physicsWorld, enemyConfig, 0, -40);
+  enemyTank.body.position.y = 15; // drop in from above, land safely
+  if (aimables) aimables[0] = enemyTank;
+}
+
+function startGame(choice: 'tiger' | 'kv1' | 'sherman' | 't34' | 'su152' | 'bobsemple') {
+  // Choose player + enemy from the 6-tank pool (enemy is a different tank)
+  const pool: Record<string, TankConfig> = {
+    tiger: TIGER_I,
+    kv1: KV_1,
+    sherman: SHERMAN,
+    t34: T34_85,
+    su152: SU_152,
+    bobsemple: BOB_SEMPLE,
+  };
+  playerConfig = pool[choice];
 
   // Tanks at their bases
-  playerTank = new Tank(scene, physicsWorld, playerConfig, 0, 46);
-  enemyTank = new Tank(scene, physicsWorld, enemyConfig, 0, -46);
+  playerTank = new Tank(scene, physicsWorld, playerConfig, 0, 40);
+  playerTank.body.position.y = 15;
+  spawnEnemy();
 
   controls = new TankControls(renderer.domElement);
   controls.bind(playerTank, scene, physicsWorld);
@@ -80,7 +102,10 @@ function startGame(choice: 'tiger' | 'kv1') {
 document.querySelectorAll('.sel-card').forEach((card) => {
   card.addEventListener('click', () => {
     const tank = card.getAttribute('data-tank');
-    if (tank === 'tiger' || tank === 'kv1') startGame(tank);
+    if (tank === 'tiger' || tank === 'kv1' || tank === 'sherman' || tank === 't34' ||
+        tank === 'su152' || tank === 'bobsemple') {
+      startGame(tank);
+    }
   });
 });
 
@@ -113,8 +138,10 @@ function animate() {
 
   physicsWorld.step(fixedDt, delta, 3);
 
+  controls.updateSniperAim(fixedDt);
   controls.updateTank(SPEED, TURN_SPEED, camera);
-  const pitch = controls.sniperMode ? controls.barrelPitch : controls.autoBarrelPitch;
+  // Barrel pitch: sniper aim in sniper mode, auto-aim in third-person
+  const pitch = controls.sniperMode ? controls.sniperAimY : controls.autoBarrelPitch;
   playerTank.setBarrelPitch(pitch);
   playerTank.update();
 
@@ -155,12 +182,36 @@ function animate() {
       eFwd.x * toPlayer.z - eFwd.z * toPlayer.x,
       eFwd.x * toPlayer.x + eFwd.z * toPlayer.z,
     );
-    enemyTank.setTurretRotation(-eAngle);
+    if (enemyTank.isTD) {
+      // TD: rotate the hull toward the player
+      const q = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0), Math.max(-0.02, Math.min(0.02, eAngle)),
+      );
+      enemyTank.group.quaternion.multiply(q);
+      enemyTank.body.quaternion.copy(enemyTank.group.quaternion as unknown as CANNON.Quaternion);
+    } else {
+      enemyTank.setTurretRotation(-eAngle);
+    }
   }
 
   if (enemyTank.hp < prevEnemyHp) {
     hud.showHitMarker();
     followCam.triggerShake(0.15);
+    // Big shake + flash when the enemy is destroyed
+    if (enemyTank.hp <= 0) {
+      followCam.triggerShake(0.6);
+    }
+  }
+
+  // ── Enemy respawn ─────────────────────────────────────
+  if (!enemyTank.alive && respawnTimer < 0) {
+    respawnTimer = 3.0; // give the explosion a moment
+  } else if (respawnTimer >= 0) {
+    respawnTimer -= fixedDt;
+    if (respawnTimer <= 0) {
+      respawnTimer = -1;
+      spawnEnemy();
+    }
   }
 
   let aimInfo: AimInfo | null = null;
@@ -198,6 +249,9 @@ function animate() {
 
   followCam.mode = controls.sniperMode ? 'sniper' : 'third-person';
   followCam.update(playerTank, delta);
+
+  // Scope overlay + hide crosshair in sniper mode
+  hud.setSniperMode(controls.sniperMode);
 
   hud.updateTank(playerTank);
   hud.updateEnemyTank(enemyTank);

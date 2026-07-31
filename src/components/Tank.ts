@@ -25,6 +25,7 @@ export class Tank {
   alive = true;
   readonly name: string;
   readonly isTiger: boolean;
+  readonly isTD: boolean;
 
   constructor(
     scene: THREE.Scene,
@@ -41,6 +42,7 @@ export class Tank {
     this.sideArmor = config.sideArmor;
     this.turretArmor = config.turretArmor;
     this.isTiger = config.id === 'tiger';
+    this.isTD = config.hasTurret === false;
 
     this.group = new THREE.Group();
     this.turret = new THREE.Group();
@@ -114,6 +116,114 @@ export class Tank {
       exhaust.rotation.x = Math.PI / 2;
       exhaust.position.set(-hW * 0.25, 0.2, hL / 2 + 0.15);
       this.group.add(exhaust);
+    } else if (config.id === 'bobsemple') {
+      // ── Bob Semple: corrugated iron tractor (funny) ────
+      // Corrugation ridges along the hull
+      const ridgeMat = new THREE.MeshStandardMaterial({
+        color: 0x9a7a4a, roughness: 0.95, metalness: 0.1,
+      });
+      for (let i = -3; i <= 3; i++) {
+        const ridge = new THREE.Mesh(
+          new THREE.BoxGeometry(0.06, hH * 0.8, 0.3),
+          ridgeMat,
+        );
+        ridge.position.set(i * 0.45, hh, 0);
+        this.group.add(ridge);
+      }
+      // Corrugated roof
+      for (let i = -2; i <= 2; i++) {
+        const roofRidge = new THREE.Mesh(
+          new THREE.BoxGeometry(hW, 0.05, 0.12),
+          ridgeMat,
+        );
+        roofRidge.position.set(0, hH + 0.02, i * 0.35);
+        this.group.add(roofRidge);
+      }
+      // Front plate
+      const front = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.9, hH * 0.6, 0.15),
+        hullMat,
+      );
+      front.position.set(0, hh, -hL / 2 + 0.1);
+      this.group.add(front);
+      // Little NZ flag on a stick
+      const flagPole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.01, 0.01, 0.5, 4),
+        darkMat,
+      );
+      flagPole.position.set(hW * 0.3, hH + 0.25, hL * 0.3);
+      this.group.add(flagPole);
+      const flagCloth = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.25, 0.16),
+        new THREE.MeshStandardMaterial({ color: 0x2233aa, side: THREE.DoubleSide }),
+      );
+      flagCloth.position.set(hW * 0.3 + 0.13, hH + 0.35, hL * 0.3);
+      this.group.add(flagCloth);
+    } else if (config.id === 't34') {
+      // ── T-34/85: highly sloped glacis + rear deck ───────
+      const slope = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.95, 0.25, 0.55),
+        hullMat,
+      );
+      slope.position.set(0, hh + 0.15, -hL / 2 + 0.05);
+      slope.rotation.x = -0.55;
+      this.group.add(slope);
+
+      // Wide track fenders
+      for (const side of [-1, 1]) {
+        const fender = new THREE.Mesh(
+          new THREE.BoxGeometry(0.4, 0.04, hL * 0.8),
+          hullMat,
+        );
+        fender.position.set(side * (hW / 2 + 0.35), 0.15, 0);
+        this.group.add(fender);
+      }
+
+      // Rear engine deck
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.75, 0.08, hL * 0.35),
+        hullMat,
+      );
+      deck.position.set(0, hh + 0.04, hL * 0.28);
+      this.group.add(deck);
+
+    } else if (config.id === 'sherman') {
+      // ── Sherman: rounded front hull + cast glacis ───────
+      const glacis = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.95, 0.3, 0.5),
+        hullMat,
+      );
+      glacis.position.set(0, hh + 0.12, -hL / 2 + 0.05);
+      glacis.rotation.x = -0.2;
+      this.group.add(glacis);
+
+      // Side skirts (HVSS style)
+      for (const side of [-1, 1]) {
+        const skirt = new THREE.Mesh(
+          new THREE.BoxGeometry(0.04, 0.12, hL * 0.85),
+          hullMat,
+        );
+        skirt.position.set(side * (hW / 2 + 0.1), 0.18, 0);
+        this.group.add(skirt);
+      }
+
+      // Rear deck with exhausts
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.7, 0.07, hL * 0.3),
+        hullMat,
+      );
+      deck.position.set(0, hh + 0.03, hL * 0.3);
+      this.group.add(deck);
+
+      for (const side of [-1, 1]) {
+        const exhaust = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.08, 0.2, 6),
+          darkMat,
+        );
+        exhaust.rotation.x = Math.PI / 2;
+        exhaust.position.set(side * 0.4, 0.15, hL / 2 + 0.1);
+        this.group.add(exhaust);
+      }
     } else {
       // ── KV-1 hull features ──────────────────────────────
       // Sloped upper front
@@ -138,15 +248,32 @@ export class Tank {
     //  TREADS & WHEELS
     // ═══════════════════════════════════════════════════════
 
-    const treadGeo = new THREE.BoxGeometry(0.6, hH * 0.5, hL * 1.05);
-    const treadL = new THREE.Mesh(treadGeo, darkMat);
-    treadL.position.set(-hW / 2 - 0.18, hH * 0.2, 0);
-    treadL.castShadow = true;
-    this.group.add(treadL);
-    const treadR = new THREE.Mesh(treadGeo, darkMat);
-    treadR.position.set(hW / 2 + 0.18, hH * 0.2, 0);
-    treadR.castShadow = true;
-    this.group.add(treadR);
+    // Track links — segmented along the length for a realistic look
+    const treadLen = hL * 1.05;
+    const linkW = 0.55;
+    const linkH = 0.06;
+    const linkD = 0.25;
+    const linkSpacing = 0.28;
+    const linkCount = Math.floor(treadLen / linkSpacing);
+    const linkMat = new THREE.MeshStandardMaterial({
+      color: 0x222222,
+      roughness: 0.9,
+      metalness: 0.2,
+    });
+    const linkGeo = new THREE.BoxGeometry(linkW, linkH, linkD);
+
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < linkCount; i++) {
+        const wz = -treadLen / 2 + i * linkSpacing + linkSpacing / 2;
+        const link = new THREE.Mesh(linkGeo, linkMat);
+        link.position.set(side * (hW / 2 + 0.18), hH * 0.18, wz);
+        // Slight rotation alternation for realistic track sag
+        link.rotation.x = (i % 2 === 0 ? 1 : -1) * 0.02;
+        link.castShadow = true;
+        link.receiveShadow = true;
+        this.group.add(link);
+      }
+    }
 
     if (this.isTiger) {
       // Tiger: 8 smaller overlapping road wheels
@@ -182,7 +309,26 @@ export class Tank {
     this.turret.position.y = turretY;
     this.group.add(this.turret);
 
-    if (this.isTiger) {
+    if (this.isTD) {
+      // ── Tank destroyer: fixed casemate superstructure, no rotating turret ──
+      const casemate = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.7, hH * 0.55, hL * 0.45),
+        turretMat,
+      );
+      casemate.position.set(0, hH * 0.5, -hL * 0.15);
+      casemate.castShadow = true;
+      casemate.receiveShadow = true;
+      this.group.add(casemate);
+
+      // Sloped front plate
+      const front = new THREE.Mesh(
+        new THREE.BoxGeometry(hW * 0.6, hH * 0.3, 0.2),
+        turretMat,
+      );
+      front.position.set(0, hH * 0.55, -hL * 0.32);
+      front.rotation.x = -0.35;
+      this.group.add(front);
+    } else if (this.isTiger) {
       // Tiger: boxy rectangular turret
       const base = new THREE.Mesh(new THREE.BoxGeometry(tW, tH, tL), turretMat);
       base.position.y = 0;
@@ -214,6 +360,58 @@ export class Tank {
       lHatch.position.set(-tW * 0.15, tH / 2 + 0.06, tL * 0.2);
       this.turret.add(lHatch);
 
+    } else if (config.id === 'sherman') {
+      // Sherman: cast rounded turret
+      const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(tW * 0.55, tW * 0.6, tH, 10),
+        turretMat,
+      );
+      base.position.y = 0;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      this.turret.add(base);
+
+      // Rear bustle (distinctive Sherman overhang)
+      const bustle = new THREE.Mesh(
+        new THREE.BoxGeometry(tW * 0.6, tH * 0.8, tL * 0.35),
+        turretMat,
+      );
+      bustle.position.set(0, 0, tL * 0.45);
+      this.turret.add(bustle);
+
+      // Loader's hatch + commander's hatch
+      const lHatch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.2, 0.05, 8),
+        hullMat,
+      );
+      lHatch.position.set(-tW * 0.15, tH / 2 + 0.03, 0);
+      this.turret.add(lHatch);
+      const cHatch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2, 0.24, 0.07, 10),
+        hullMat,
+      );
+      cHatch.position.set(tW * 0.15, tH / 2 + 0.04, -tL * 0.1);
+      this.turret.add(cHatch);
+
+    } else if (config.id === 't34') {
+      // T-34/85: rounded cast turret, compact
+      const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(tW * 0.52, tW * 0.6, tH, 8),
+        turretMat,
+      );
+      base.position.y = 0;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      this.turret.add(base);
+
+      // T-34 commander's hatch (single round)
+      const hatch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.3, 0.08, 10),
+        hullMat,
+      );
+      hatch.position.set(0, tH / 2 + 0.04, tL * 0.12);
+      this.turret.add(hatch);
+
     } else {
       // KV-1: rounded octagonal turret
       const base = new THREE.Mesh(
@@ -242,25 +440,33 @@ export class Tank {
       this.turret.add(hatch);
     }
 
-    // Turret ring (both)
-    const ring = new THREE.Mesh(
-      new THREE.CylinderGeometry(tW * 0.55, tW * 0.55, 0.07, 16),
-      darkMat,
-    );
-    ring.position.y = -tH / 2;
-    this.turret.add(ring);
+    // Turret ring (not for casemate TDs)
+    if (!this.isTD) {
+      const ring = new THREE.Mesh(
+        new THREE.CylinderGeometry(tW * 0.55, tW * 0.55, 0.07, 16),
+        darkMat,
+      );
+      ring.position.y = -tH / 2;
+      this.turret.add(ring);
+    }
 
     // ═══════════════════════════════════════════════════════
     //  GUN (with barrel pivot for pitch)
     // ═══════════════════════════════════════════════════════
 
     const bLen = config.barrelLength;
-    const barrelR = this.isTiger ? 0.15 : 0.13;
+    const barrelR = config.id === 'tiger' ? 0.15 : config.id === 't34' ? 0.14 : 0.13;
 
-    // Pivot point at the turret face where the barrel meets the mantlet
+    // Pivot point where the barrel meets the mantlet/casemate
     this.barrelPivot = new THREE.Group();
-    this.barrelPivot.position.set(0, 0, -tL / 2 - 0.05);
-    this.turret.add(this.barrelPivot);
+    if (this.isTD) {
+      // Fixed to the hull (casemate front), no turret rotation
+      this.barrelPivot.position.set(0, hH * 0.6, -hL / 2 + 0.1);
+      this.group.add(this.barrelPivot);
+    } else {
+      this.barrelPivot.position.set(0, 0, -tL / 2 - 0.05);
+      this.turret.add(this.barrelPivot);
+    }
 
     const barrel = new THREE.Mesh(
       new THREE.CylinderGeometry(barrelR * 0.85, barrelR, bLen, 8),
@@ -286,10 +492,11 @@ export class Tank {
     this.barrelTip.position.set(0, 0, -bLen - 0.08);
     this.barrelPivot.add(this.barrelTip);
 
-    // KV-1 gets a large mantlet
+    // Non-Tiger tanks get a mantlet (T-34 gets the biggest)
     if (!this.isTiger) {
+      const mantletR = config.id === 't34' ? 0.55 : this.isTD ? 0.6 : 0.5;
       const mantlet = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.5, 0.6, 0.18, 10),
+        new THREE.CylinderGeometry(mantletR * 0.85, mantletR, 0.18, 10),
         hullMat,
       );
       mantlet.rotation.x = Math.PI / 2;
@@ -309,14 +516,16 @@ export class Tank {
       }
     }
 
-    // Antenna (both)
-    const antenna = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.01, 0.014, 0.5, 4),
-      new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.3 }),
-    );
-    antenna.position.set(-tW * 0.25, tH / 2 + 0.25, tL * 0.1);
-    antenna.rotation.x = 0.15;
-    this.turret.add(antenna);
+    // Antenna (not on casemate TDs)
+    if (!this.isTD) {
+      const antenna = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.01, 0.014, 0.5, 4),
+        new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.3 }),
+      );
+      antenna.position.set(-tW * 0.25, tH / 2 + 0.25, tL * 0.1);
+      antenna.rotation.x = 0.15;
+      this.turret.add(antenna);
+    }
 
     // ═══════════════════════════════════════════════════════
     //  PHYSICS BODY
@@ -339,6 +548,8 @@ export class Tank {
   }
 
   setTurretRotation(angle: number): void {
+    // Casemate TDs have no rotating turret — the hull turns instead
+    if (this.isTD) return;
     this.turret.rotation.y = angle;
   }
 

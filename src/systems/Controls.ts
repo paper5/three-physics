@@ -31,6 +31,10 @@ export class TankControls {
   autoBarrelPitch = 0;
   /** Toggle between third-person and sniper view. */
   sniperMode = false;
+  /** Sniper aim offset (radians): X = turret yaw, Y = barrel pitch. */
+  sniperAimX = 0;
+  sniperAimY = 0;
+  private readonly sniperSensitivity = 0.0012;
 
   /** Callback fired each time a shell is spawned. */
   onShellFired?: () => void;
@@ -70,8 +74,15 @@ export class TankControls {
     domElement.addEventListener('mousemove', (e) => {
       this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
       this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-      // Barrel pitch accumulates from vertical mouse movement
-      this.barrelPitch -= e.movementY * 0.003;
+
+      if (this.sniperMode) {
+        // Low-sensitivity aim in sniper mode
+        this.sniperAimX -= e.movementX * this.sniperSensitivity;
+        this.sniperAimY -= e.movementY * this.sniperSensitivity;
+      } else {
+        // Barrel pitch accumulates from vertical mouse movement
+        this.barrelPitch -= e.movementY * 0.003;
+      }
     });
 
     // ── Left-click → fire, Right-click → toggle sniper ───
@@ -89,6 +100,7 @@ export class TankControls {
         this.scene, this.world, this.tank,
         this.tank.config.muzzleSpeed,
         this.tank.config.shellPenetration,
+        this.tank.config.shellDamage,
       );
       this.shells.push(shell);
       this.lastFireTime = performance.now();
@@ -199,32 +211,95 @@ export class TankControls {
     }
 
     // ── Turret tracking ───────────────────────────────────
-    const intersect = this.getIntersection(camera);
-    if (intersect) {
-      const tankPos = new THREE.Vector3(body.position.x, 0, body.position.z);
-      const toTarget = new THREE.Vector3().copy(intersect).sub(tankPos);
-      toTarget.y = 0;
-      if (toTarget.lengthSq() > 0.001) {
-        toTarget.normalize();
-        const fwd = new CANNON.Vec3(0, 0, -1);
-        body.quaternion.vmult(fwd, fwd);
-        const tankFwd = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
-        const angle = Math.atan2(
-          tankFwd.x * toTarget.z - tankFwd.z * toTarget.x,
-          tankFwd.x * toTarget.x + tankFwd.z * toTarget.z,
-        );
-        tank.setTurretRotation(-angle);
+    if (this.sniperMode) {
+      // Sniper: direct aim control from mouse deltas
+      if (tank.isTD) {
+        // TD: rotate the whole hull toward sniper aim
+        this.turnHullToAbsAngle(body, this.hullForwardAngle(body) + this.sniperAimX, dt);
+      } else {
+        tank.setTurretRotation(this.sniperAimX);
+      }
+      this.autoBarrelPitch = this.sniperAimY;
+    } else {
+      const intersect = this.getIntersection(camera);
+      if (intersect) {
+        const tankPos = new THREE.Vector3(body.position.x, 0, body.position.z);
+        const toTarget = new THREE.Vector3().copy(intersect).sub(tankPos);
+        toTarget.y = 0;
+        if (toTarget.lengthSq() > 0.001) {
+          toTarget.normalize();
+          const fwd = new CANNON.Vec3(0, 0, -1);
+          body.quaternion.vmult(fwd, fwd);
+          const tankFwd = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
+          const angle = Math.atan2(
+            tankFwd.x * toTarget.z - tankFwd.z * toTarget.x,
+            tankFwd.x * toTarget.x + tankFwd.z * toTarget.z,
+          );
+          if (tank.isTD) {
+            // TD: rotate the hull toward the target — but only when not driving,
+            // so WASD movement isn't fought by the auto-aim
+            const driving = this.forward || this.backward || this.left || this.right;
+            if (!driving) {
+              // Use the target's absolute direction angle (fixes inverted turn)
+              this.turnHullToAbsAngle(body, Math.atan2(toTarget.x, toTarget.z), dt);
+            }
+          } else {
+            tank.setTurretRotation(-angle);
+          }
 
-        // ── Auto barrel pitch (aim at intersection point) ──
-        // Transform intersection into barrelPivot local space, compute pitch
-        const pivotWorld = new THREE.Vector3();
-        tank.barrelPivot.getWorldPosition(pivotWorld);
-        const localTarget = new THREE.Vector3().copy(intersect).sub(pivotWorld);
-        // BarrelPivot forward is -Z in its local space
-        const dist = Math.sqrt(localTarget.x * localTarget.x + localTarget.z * localTarget.z);
-        this.autoBarrelPitch = Math.atan2(localTarget.y, dist);
+          // ── Auto barrel pitch (aim at intersection point) ──
+          const pivotWorld = new THREE.Vector3();
+          tank.barrelPivot.getWorldPosition(pivotWorld);
+          const localTarget = new THREE.Vector3().copy(intersect).sub(pivotWorld);
+          const dist = Math.sqrt(localTarget.x * localTarget.x + localTarget.z * localTarget.z);
+          this.autoBarrelPitch = Math.atan2(localTarget.y, dist);
+        }
       }
     }
+  }
+
+  /** Current hull forward angle in the XZ plane (atan2 of forward.x, forward.z). */
+  private hullForwardAngle(body: CANNON.Body): number {
+    const fwd = new CANNON.Vec3(0, 0, -1);
+    body.quaternion.vmult(fwd, fwd);
+    return Math.atan2(fwd.x, fwd.z);
+  }
+
+  /** Slowly rotate the hull so its forward direction reaches the given absolute angle.
+   *  Dead zone prevents jitter from tiny cursor movements. */
+  private turnHullToAbsAngle(body: CANNON.Body, targetAngle: number, dt: number): void {
+    const current = this.hullForwardAngle(body);
+    let diff = targetAngle - current;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    // Dead zone — ignore tiny angular errors (≈4°) so the hull isn't twitchy
+    const DEAD_ZONE = 0.07;
+    if (Math.abs(diff) < DEAD_ZONE) return;
+
+    // Slow, deliberate hull traverse for TDs (≈34°/s)
+    const maxTurn = 0.6 * dt;
+    const turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
+    const q = new CANNON.Quaternion();
+    q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), turn);
+    body.quaternion = q.mult(body.quaternion);
+    body.quaternion.normalize();
+  }
+
+  /**
+   * Called each frame in sniper mode: clamps aim to reasonable limits.
+   * (No auto-recenter — the aim stays where you put it.)
+   */
+  updateSniperAim(_dt: number): void {
+    if (!this.sniperMode) return;
+
+    // Clamp turret yaw ±90°, barrel pitch −7° to +15°
+    this.sniperAimX = THREE.MathUtils.clamp(this.sniperAimX, -Math.PI / 2, Math.PI / 2);
+    this.sniperAimY = THREE.MathUtils.clamp(
+      this.sniperAimY,
+      -7 * (Math.PI / 180),
+      15 * (Math.PI / 180),
+    );
   }
 
   /** Update all active shells (sync + cleanup destroyed). */

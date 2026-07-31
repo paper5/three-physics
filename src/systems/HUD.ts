@@ -39,6 +39,7 @@ export class HUD {
   private _shellsFired = 0;
   private _blocksDestroyed = 0;
   private hitMarker: HTMLElement;
+  private scopeOverlay: HTMLElement;
 
   constructor(container: HTMLElement = document.body) {
     // ── Player HP bar (top left) ──────────────────────────
@@ -109,6 +110,20 @@ export class HUD {
     hm.innerHTML = '✕';
     container.appendChild(hm);
     this.hitMarker = hm;
+
+    // ── Sniper scope overlay ──────────────────────────────
+    const scope = document.createElement('div');
+    scope.id = 'hud-scope';
+    scope.innerHTML = `
+      <div class="scope-ring"></div>
+      <div class="scope-hline"></div>
+      <div class="scope-vline"></div>
+      <div class="scope-center"></div>
+      <div class="scope-vignette"></div>
+    `;
+    scope.style.display = 'none';
+    container.appendChild(scope);
+    this.scopeOverlay = scope;
 
     // Refs
     this.shellsEl = stats.querySelector('#hud-shells')!;
@@ -202,6 +217,13 @@ export class HUD {
       this.aimStatusEl.textContent = `${penPct}% PEN / ${ricPct}% RICOCHET`;
       this.aimStatusEl.style.color = '#fa0';
     }
+  }
+
+  /** Show/hide the sniper scope overlay. */
+  setSniperMode(active: boolean): void {
+    this.scopeOverlay.style.display = active ? 'block' : 'none';
+    const crosshair = document.getElementById('hud-crosshair');
+    if (crosshair) crosshair.style.display = active ? 'none' : 'block';
   }
 
   /** Flash a hit marker when a shot connects. */

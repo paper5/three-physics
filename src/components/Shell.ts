@@ -2,7 +2,7 @@ import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 
 import { Tank } from './Tank';
-import { spawnExplosion, spawnRicochetSpark } from './Explosion';
+import { spawnExplosion, spawnBigExplosion, spawnRicochetSpark } from './Explosion';
 
 const SHELL_RADIUS = 0.12;
 const SHELL_MASS = 0.5;
@@ -25,6 +25,7 @@ export class Shell {
   readonly mesh: THREE.Mesh;
   readonly body: CANNON.Body;
   penetration = PENETRATION;
+  damage = 100;
   alive = true;
   private age = 0;
   private scene: THREE.Scene;
@@ -117,7 +118,7 @@ export class Shell {
 
       if (penChance >= 1 || Math.random() < penChance) {
         // ── Penetration ────────────────────────────────────
-        const damage = this.penetration * 0.6; // damage ≈ 48 per hit
+        const damage = this.damage;
 
         if (hitBlock) {
           const impulse = new CANNON.Vec3();
@@ -132,8 +133,23 @@ export class Shell {
           }
         }
         if (hitTank) {
-          hitTank.takeDamage(damage);
-          spawnExplosion(this.scene, hitPos);
+          const killed = hitTank.takeDamage(damage);
+          if (killed) {
+            // Spectacular destruction!
+            spawnBigExplosion(this.scene, hitPos);
+            // Chain of secondary explosions along the tank body
+            const pos = hitTank.body.position;
+            for (let i = 0; i < 4; i++) {
+              spawnExplosion(this.scene, new THREE.Vector3(
+                pos.x + (Math.random() - 0.5) * 3,
+                pos.y + Math.random() * 2,
+                pos.z + (Math.random() - 0.5) * 3,
+              ));
+            }
+            hitTank.dispose(this.scene, this.world);
+          } else {
+            spawnExplosion(this.scene, hitPos);
+          }
         }
 
         this.destroy();
@@ -143,7 +159,9 @@ export class Shell {
         this.ricochet(v, n);
         spawnRicochetSpark(this.scene, hitPos);
         // Apply partial damage from glancing blow
-        if (hitBlock) hitBlock.takeDamage(penChance * 15);
+        const glancing = this.damage * penChance * 0.5;
+        if (hitBlock) hitBlock.takeDamage(glancing);
+        if (hitTank) hitTank.takeDamage(glancing);
       }
     });
   }
@@ -163,9 +181,11 @@ export class Shell {
     tank: Tank,
     muzzleSpeed: number,
     penetration: number,
+    damage: number,
   ): Shell {
     const shell = new Shell(scene, world, tank.body);
     shell.penetration = penetration;
+    shell.damage = damage;
 
     // Get barrel tip position and direction from the Three.js hierarchy
     const tipPos = new THREE.Vector3();

@@ -2,48 +2,16 @@ import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 
 /**
- * Generates terrain features: hills, player/enemy bases, and a central flag.
+ * Generates map features: player/enemy bases and a central flag.
+ * Terrain hills are part of the heightmapped ground.
  */
 export class MapGenerator {
   readonly objects: THREE.Object3D[] = [];
 
   constructor(scene: THREE.Scene, world: CANNON.World) {
-    this.createHills(scene, world);
     this.createBase(scene, world, 48, 'green');
     this.createBase(scene, world, -48, 'red');
     this.createFlag(scene, world);
-  }
-
-  // ── Hills ────────────────────────────────────────────────
-  private createHills(scene: THREE.Scene, world: CANNON.World): void {
-    const rockMat = new THREE.MeshStandardMaterial({
-      color: 0x5a4a3a,
-      roughness: 0.95,
-      metalness: 0.0,
-    });
-    // Scatter mounds across the map
-    const positions: [number, number, number, number, number][] = [
-      [-25, 0, -18, 5, 1.5],  [30, 0, -15, 4, 1.0],
-      [-35, 0, 12, 3.5, 0.8], [28, 0, 20, 6, 1.8],
-      [-12, 0, -35, 4, 0.9],  [18, 0, -32, 3, 0.7],
-      [-40, 0, -28, 5, 1.2],  [42, 0, 28, 4.5, 1.1],
-      [-18, 0, 38, 4, 0.8],   [22, 0, -45, 3, 0.6],
-      [-8, 0, 0, 2.5, 0.5],   [8, 0, -8, 2, 0.4],
-    ];
-    for (const [x, , z, w, h] of positions) {
-      const geo = new THREE.BoxGeometry(w, h, w * 0.7);
-      const mesh = new THREE.Mesh(geo, rockMat);
-      mesh.position.set(x, h / 2, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-      this.objects.push(mesh);
-
-      const body = new CANNON.Body({ mass: 0 });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, w * 0.35)));
-      body.position.set(x, h / 2, z);
-      world.addBody(body);
-    }
   }
 
   // ── Bases ────────────────────────────────────────────────
@@ -62,7 +30,6 @@ export class MapGenerator {
       metalness: 0.1,
     });
 
-    // Platform
     const plat = new THREE.Mesh(new THREE.BoxGeometry(8, 0.4, 6), baseMat);
     plat.position.set(0, 0.2, z);
     plat.receiveShadow = true;
@@ -74,12 +41,11 @@ export class MapGenerator {
     platBody.position.set(0, 0.2, z);
     world.addBody(platBody);
 
-    // Walls around the base
     const wallPositions: [number, number, number, number, number][] = [
-      [0, 0.5, z - 3.2, 8, 0.6],  // front
-      [0, 0.5, z + 3.2, 8, 0.6],  // back
-      [-4.2, 0.5, z, 0.4, 0.6],   // left
-      [4.2, 0.5, z, 0.4, 0.6],    // right
+      [0, 0.5, z - 3.2, 8, 0.6],
+      [0, 0.5, z + 3.2, 8, 0.6],
+      [-4.2, 0.5, z, 0.4, 0.6],
+      [4.2, 0.5, z, 0.4, 0.6],
     ];
     for (const [wx, wy, wz, wsx, wsy] of wallPositions) {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(wsx, wsy, 0.4), wallMat);
@@ -96,7 +62,6 @@ export class MapGenerator {
 
   // ── Flag ─────────────────────────────────────────────────
   private createFlag(scene: THREE.Scene, world: CANNON.World): void {
-    // Pole
     const poleMat = new THREE.MeshStandardMaterial({
       color: 0x888888, metalness: 0.6, roughness: 0.3,
     });
@@ -105,13 +70,11 @@ export class MapGenerator {
     pole.castShadow = true;
     scene.add(pole);
     this.objects.push(pole);
-    // Physics body for pole (thin cylinder hitbox)
     const pBody = new CANNON.Body({ mass: 0 });
     pBody.addShape(new CANNON.Cylinder(0.08, 0.1, 3, 6));
     pBody.position.set(0, 1.5, 0);
     world.addBody(pBody);
 
-    // Flag cloth
     const flagMat = new THREE.MeshStandardMaterial({
       color: 0xffff44,
       emissive: 0xffaa00,
@@ -123,7 +86,6 @@ export class MapGenerator {
     scene.add(flag);
     this.objects.push(flag);
 
-    // Glow ring at base
     const glowMat = new THREE.MeshStandardMaterial({
       color: 0xffff44,
       emissive: 0xffaa00,

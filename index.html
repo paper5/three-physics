@@ -204,6 +204,71 @@
         100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
       }
 
+      /* ── Sniper scope ─────────────────────────────────── */
+      #hud-scope {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 20;
+        overflow: hidden;
+      }
+      #hud-scope .scope-ring {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(70vmin, 520px);
+        height: min(70vmin, 520px);
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        border: 2px solid rgba(0,0,0,0.9);
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.15),
+                    inset 0 0 80px rgba(0,0,0,0.7);
+      }
+      #hud-scope .scope-hline {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 130%;
+        height: 2px;
+        background: linear-gradient(90deg,
+          transparent 25%,
+          rgba(0,0,0,0.9) 30%, rgba(0,0,0,0.9) 70%,
+          transparent 75%);
+      }
+      #hud-scope .scope-vline {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        height: 130%;
+        width: 2px;
+        background: linear-gradient(180deg,
+          transparent 25%,
+          rgba(0,0,0,0.9) 30%, rgba(0,0,0,0.9) 70%,
+          transparent 75%);
+      }
+      #hud-scope .scope-vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          circle at center,
+          transparent 31%,
+          rgba(0,0,0,0.92) 33%
+        );
+      }
+      #hud-scope .scope-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid rgba(255,80,40,0.9);
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(255,120,0,0.6);
+      }
+
       /* ── Aim info panel (bottom center, above reload) ── */
       #hud-aim {
         position: fixed;
@@ -274,8 +339,9 @@
         text-transform: uppercase;
       }
       .sel-cards {
-        display: flex;
-        gap: 30px;
+        display: grid;
+        grid-template-columns: repeat(3, 210px);
+        gap: 20px;
       }
       .sel-card {
         width: 220px;
@@ -316,6 +382,10 @@
       }
       .sel-tiger { border-color: rgba(140,140,130,0.3); }
       .sel-kv1   { border-color: rgba(80,120,60,0.3); }
+      .sel-sherman { border-color: rgba(120,140,80,0.3); }
+      .sel-t34   { border-color: rgba(90,110,60,0.3); }
+      .sel-su152 { border-color: rgba(80,90,50,0.3); }
+      .sel-bobsemple { border-color: rgba(160,120,60,0.3); }
     </style>
   </head>
   <body>
@@ -343,6 +413,50 @@
             Penetration: <span>80mm</span><br>
             HP: <span>1200</span><br>
             Reload: <span>3.0s</span>
+          </div>
+        </div>
+        <div class="sel-card sel-sherman" data-tank="sherman">
+          <h2>M4A3E8 Sherman</h2>
+          <div class="nation">USA</div>
+          <div class="stats">
+            Armour: <span>64mm</span><br>
+            Gun: <span>76mm M1</span><br>
+            Penetration: <span>105mm</span><br>
+            HP: <span>950</span><br>
+            Reload: <span>3.4s</span>
+          </div>
+        </div>
+        <div class="sel-card sel-t34" data-tank="t34">
+          <h2>T-34/85</h2>
+          <div class="nation">USSR</div>
+          <div class="stats">
+            Armour: <span>60mm</span><br>
+            Gun: <span>85mm ZiS-S-53</span><br>
+            Penetration: <span>120mm</span><br>
+            HP: <span>900</span><br>
+            Reload: <span>3.5s</span>
+          </div>
+        </div>
+        <div class="sel-card sel-su152" data-tank="su152">
+          <h2>SU-152</h2>
+          <div class="nation">USSR · TD</div>
+          <div class="stats">
+            Armour: <span>75mm</span><br>
+            Gun: <span>152mm ML-20S</span><br>
+            Penetration: <span>130mm</span><br>
+            Damage: <span>350!</span><br>
+            Reload: <span>8.0s</span>
+          </div>
+        </div>
+        <div class="sel-card sel-bobsemple" data-tank="bobsemple">
+          <h2>Bob Semple</h2>
+          <div class="nation">New Zealand</div>
+          <div class="stats">
+            Armour: <span>8mm 🤡</span><br>
+            Gun: <span>.303 MG</span><br>
+            Penetration: <span>20mm</span><br>
+            HP: <span>400</span><br>
+            Reload: <span>2.0s</span>
           </div>
         </div>
       </div>
