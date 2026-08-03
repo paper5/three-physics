@@ -1,10 +1,12 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 
-const MAP_SIZE = 120;
+const MAP_SIZE = 240;
 
 /** Static rock physics bodies — used for enemy obstacle avoidance. */
 export const rockBodies: CANNON.Body[] = [];
+/** Rock meshes — used for distance culling. */
+export const rockMeshes: THREE.Mesh[] = [];
 
 /**
  * Flat terrain with scattered rock obstacles.
@@ -51,16 +53,21 @@ export function createGround(scene: THREE.Scene, world: CANNON.World): void {
 
   // [x, z, width, height, depth]
   const rocks: [number, number, number, number, number][] = [
-    [-25, -18, 5, 1.5, 4], [30, -15, 4, 1.0, 3],
-    [-35, 12, 3.5, 0.8, 2.5], [28, 20, 6, 1.8, 4],
-    [-12, -35, 4, 0.9, 3], [18, -32, 3, 0.7, 2],
-    [-40, -28, 5, 1.2, 3.5], [42, 28, 4.5, 1.1, 3],
-    [-18, 38, 4, 0.8, 3], [22, -45, 3, 0.6, 2],
-    [-8, 0, 2.5, 0.5, 2], [8, -8, 2, 0.4, 1.5],
-    [-20, -10, 3.5, 0.7, 2.5], [15, 10, 4, 0.9, 3],
-    [0, -25, 3, 0.6, 2], [-30, 30, 3.5, 0.8, 2.5],
-    [35, -30, 3, 0.5, 2], [-5, 20, 2.5, 0.5, 2],
-    [20, 5, 3, 0.7, 2.5], [-15, -5, 2, 0.4, 1.5],
+    // Central cluster
+    [-25, -18, 5, 1.5, 4], [30, -15, 4, 1.0, 3], [-35, 12, 3.5, 0.8, 2.5],
+    [28, 20, 6, 1.8, 4], [-12, -35, 4, 0.9, 3], [18, -32, 3, 0.7, 2],
+    [-8, 0, 2.5, 0.5, 2], [8, -8, 2, 0.4, 1.5], [-20, -10, 3.5, 0.7, 2.5],
+    [15, 10, 4, 0.9, 3], [0, -25, 3, 0.6, 2], [-30, 30, 3.5, 0.8, 2.5],
+    [35, -30, 3, 0.5, 2], [-5, 20, 2.5, 0.5, 2], [20, 5, 3, 0.7, 2.5],
+    // Wide ring of rocks across the big map
+    [-70, -80, 5, 1.4, 4], [55, -95, 4, 1.0, 3], [-90, 40, 3.5, 0.8, 2.5],
+    [85, 60, 6, 1.8, 4], [-50, -110, 4, 0.9, 3], [60, -60, 3, 0.7, 2],
+    [-105, -30, 5, 1.2, 3.5], [100, -20, 4.5, 1.1, 3], [-75, 85, 4, 0.8, 3],
+    [40, 100, 3, 0.6, 2], [-15, -90, 2.5, 0.5, 2], [75, 30, 3, 0.7, 2.5],
+    [-60, 60, 3.5, 0.8, 2.5], [95, -75, 3, 0.5, 2], [-95, -70, 2.5, 0.5, 2],
+    [50, 50, 3, 0.7, 2.5], [-40, 95, 2, 0.4, 1.5], [25, -70, 4, 1.0, 3],
+    [-80, -5, 3, 0.6, 2], [10, 75, 3.5, 0.8, 2.5], [-110, 60, 2, 0.4, 1.5],
+    [65, -35, 2.5, 0.5, 2], [-25, 110, 3, 0.7, 2], [90, 85, 2, 0.4, 1.5],
   ];
 
   for (const [x, z, w, h, d] of rocks) {
@@ -70,6 +77,7 @@ export function createGround(scene: THREE.Scene, world: CANNON.World): void {
     rock.castShadow = true;
     rock.receiveShadow = true;
     scene.add(rock);
+    rockMeshes.push(rock);
 
     const rockBody = new CANNON.Body({ mass: 0 });
     rockBody.addShape(new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)));

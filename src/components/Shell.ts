@@ -24,6 +24,8 @@ export class Shell {
   damage = 100;
   type: 'ap' | 'he' | 'heat' = 'ap';
   splash = 0;
+  /** The tank that fired this shell (for kill attribution). */
+  owner: Tank | null = null;
   alive = true;
   private age = 0;
   private scene: THREE.Scene;
@@ -185,6 +187,7 @@ export class Shell {
 
   /** Apply damage to a tank, handling destruction. */
   private damageTank(tank: Tank, damage: number, hitPos: THREE.Vector3): void {
+    tank.lastHitBy = this.owner; // record who fired the killing/damaging shot
     const killed = tank.takeDamage(damage);
     if (killed) {
       spawnBigExplosion(this.scene, hitPos);
@@ -230,6 +233,7 @@ export class Shell {
     shell.damage = shellDef.damage * tank.damageMult;
     shell.type = shellDef.id;
     shell.splash = shellDef.splash ?? 0;
+    shell.owner = tank;
 
     // Shell colour varies by type
     const color = shellDef.id === 'he' ? 0xaa4433 : shellDef.id === 'heat' ? 0x33aa66 : 0xcc8844;

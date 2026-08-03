@@ -9,8 +9,8 @@ export class MapGenerator {
   readonly objects: THREE.Object3D[] = [];
 
   constructor(scene: THREE.Scene, world: CANNON.World) {
-    this.createBase(scene, world, 48, 'green');
-    this.createBase(scene, world, -48, 'red');
+    this.createBase(scene, world, 100, 'green');
+    this.createBase(scene, world, -100, 'red');
     this.createFlag(scene, world);
   }
 

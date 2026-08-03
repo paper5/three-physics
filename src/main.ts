@@ -4,12 +4,12 @@ import * as CANNON from 'cannon-es';
 import { Block } from './components/Block';
 import { Consumable } from './components/Consumable';
 import type { ConsumableKind } from './components/Consumable';
-import { createGround, rockBodies } from './components/Ground';
+import { createGround, rockBodies, rockMeshes } from './components/Ground';
 import { updateParticles } from './components/Explosion';
 import { Shell } from './components/Shell';
 import { Tank } from './components/Tank';
 import { generateFortress } from './components/TowerGenerator';
-import { TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE } from './data/tankConfigs';
+import { TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE, PZ4, STUART, T34_STARTER, PERSHING, TIGER2 } from './data/tankConfigs';
 import type { TankConfig } from './data/tankConfigs';
 import { createPhysicsWorld } from './physics/world';
 import { createCamera } from './systems/Camera';
@@ -34,8 +34,6 @@ const physicsWorld = createPhysicsWorld();
 
 createLights(scene);
 createGround(scene, physicsWorld);
-
-// ── Map features (hills, bases, flag) ──────────────────────
 new MapGenerator(scene, physicsWorld);
 
 const hud = new HUD();
@@ -44,40 +42,99 @@ const composer = createPostProcessing(scene, camera, renderer);
 setupResizeHandler(camera, renderer);
 window.addEventListener('resize', () => resizeComposer(composer, renderer));
 
-// ── Tank selection ─────────────────────────────────────────
+// ── Tank selection + evolution ─────────────────────────────
 let playerConfig: TankConfig;
-let enemyConfig: TankConfig;
 let playerTank: Tank;
-let enemyTank: Tank;
 let controls: TankControls;
 let followCam: FollowCamera;
 let blocks: Block[];
 let aimables: (Tank | Block)[];
-let respawnTimer = -1;
+let playerNation: 'germany' | 'usa' | 'ussr' = 'germany';
+let currentTier = 0;
+let enemyCount = 2;
 
-const TANK_POOL: TankConfig[] = [TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE];
+interface EnemyState {
+  tank: Tank;
+  config: TankConfig;
+  reloadTimer: number;
+  respawnTimer: number;
+  prevHp: number;
+  slot: number;
+}
+let enemies: EnemyState[] = [];
 
-/** Spawn a new random enemy tank (different from the player's) at the enemy base. */
-function spawnEnemy(): void {
+const TANK_POOL: TankConfig[] = [
+  TIGER_I, KV_1, SHERMAN, T34_85, SU_152, BOB_SEMPLE, PZ4, STUART, T34_STARTER, PERSHING, TIGER2,
+];
+const TANK_BY_ID: Record<string, TankConfig> = {};
+for (const t of TANK_POOL) TANK_BY_ID[t.id] = t;
+
+const EVOLUTION_CHAINS: Record<string, { id: string; name: string; cost: number }[]> = {
+  germany: [
+    { id: 'pz4', name: 'Panzer IV', cost: 0 },
+    { id: 'tiger', name: 'Tiger I', cost: 3 },
+    { id: 'tiger2', name: 'Tiger II', cost: 5 },
+    { id: 'bobsemple', name: 'Bob Semple 🤡', cost: 8 },
+  ],
+  usa: [
+    { id: 'stuart', name: 'M3 Stuart', cost: 0 },
+    { id: 'sherman', name: 'M4A3E8 Sherman', cost: 3 },
+    { id: 'pershing', name: 'M26 Pershing', cost: 5 },
+    { id: 'bobsemple', name: 'Bob Semple 🤡', cost: 8 },
+  ],
+  ussr: [
+    { id: 't34early', name: 'T-34', cost: 0 },
+    { id: 't34', name: 'T-34/85', cost: 3 },
+    { id: 'su152', name: 'SU-152', cost: 6 },
+    { id: 'bobsemple', name: 'Bob Semple 🤡', cost: 10 },
+  ],
+};
+
+/** Spawn an enemy at a spread position across the enemy side. */
+function spawnEnemy(e: EnemyState): void {
   const options = TANK_POOL.filter((c) => c.id !== playerConfig.id);
-  enemyConfig = options[Math.floor(Math.random() * options.length)];
-  enemyTank = new Tank(scene, physicsWorld, enemyConfig, 0, -40);
-  enemyTank.body.position.y = 15; // drop in from above, land safely
-  TankControls.setupBody(enemyTank.body);
-  if (aimables) aimables[0] = enemyTank;
-  enemyReloadTimer = 3;
+  e.config = options[Math.floor(Math.random() * options.length)];
+  const x = (e.slot - (enemyCount - 1) / 2) * 22;
+  const z = -90;
+  e.tank = new Tank(scene, physicsWorld, e.config, x, z);
+  e.tank.body.position.y = 15;
+  TankControls.setupBody(e.tank.body);
+  e.reloadTimer = 2 + Math.random() * 3;
+  e.respawnTimer = -1;
+  e.prevHp = e.tank.hp;
+  createLabel(e.tank);
 }
 
-/** Slowly rotate the enemy hull toward an absolute XZ angle. */
-function turnEnemyHull(targetAngle: number, dt: number): void {
-  const body = enemyTank.body;
+function initEnemies(): void {
+  for (const e of enemies) {
+    if (e.tank.alive) e.tank.dispose(scene, physicsWorld);
+    removeLabel(e.tank);
+  }
+  enemies = [];
+  for (let i = 0; i < enemyCount; i++) {
+    const e: EnemyState = {
+      tank: null as unknown as Tank,
+      config: TIGER_I,
+      reloadTimer: 2,
+      respawnTimer: -1,
+      prevHp: 1000,
+      slot: i,
+    };
+    enemies.push(e);
+    spawnEnemy(e);
+  }
+  aimables = [...enemies.map((e) => e.tank), ...blocks];
+}
+
+/** Slowly rotate a tank's hull toward an absolute XZ angle. */
+function turnHull(body: CANNON.Body, targetAngle: number, dt: number, speed = 1.5): void {
   const fwd = new CANNON.Vec3(0, 0, -1);
   body.quaternion.vmult(fwd, fwd);
   const current = Math.atan2(fwd.x, fwd.z);
   let diff = targetAngle - current;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  const maxTurn = 1.5 * dt;
+  const maxTurn = speed * dt;
   const turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
   const q = new CANNON.Quaternion();
   q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), turn);
@@ -85,22 +142,17 @@ function turnEnemyHull(targetAngle: number, dt: number): void {
   body.quaternion.normalize();
 }
 
-function startGame(choice: 'tiger' | 'kv1' | 'sherman' | 't34' | 'su152' | 'bobsemple') {
-  // Choose player + enemy from the 6-tank pool (enemy is a different tank)
-  const pool: Record<string, TankConfig> = {
-    tiger: TIGER_I,
-    kv1: KV_1,
-    sherman: SHERMAN,
-    t34: T34_85,
-    su152: SU_152,
-    bobsemple: BOB_SEMPLE,
-  };
-  playerConfig = pool[choice];
+function startGame(nation: 'germany' | 'usa' | 'ussr') {
+  playerNation = nation;
+  currentTier = 0;
+  playerConfig = TANK_BY_ID[EVOLUTION_CHAINS[nation][0].id];
 
-  // Tanks at their bases
-  playerTank = new Tank(scene, physicsWorld, playerConfig, 0, 40);
+  playerTank = new Tank(scene, physicsWorld, playerConfig, 0, 95);
   playerTank.body.position.y = 15;
-  spawnEnemy();
+
+  blocks = generateFortress(scene, physicsWorld, -60, 0);
+  aimables = [];
+  initEnemies();
 
   controls = new TankControls(renderer.domElement);
   controls.bind(playerTank, scene, physicsWorld);
@@ -114,12 +166,8 @@ function startGame(choice: 'tiger' | 'kv1' | 'sherman' | 't34' | 'su152' | 'bobs
 
   followCam = new FollowCamera(camera, { distance: 14, height: 10 });
 
-  // Initial shell indicator
   hud.setShell(playerConfig.shells[0].name, 0);
-
-  // Small destructible wall near flag (not the massive fortress)
-  blocks = generateFortress(scene, physicsWorld, -28, 0);
-  aimables = [enemyTank, ...blocks];
+  createLabel(playerTank);
 
   document.getElementById('hud-selector')?.classList.add('hidden');
   animate();
@@ -127,17 +175,64 @@ function startGame(choice: 'tiger' | 'kv1' | 'sherman' | 't34' | 'su152' | 'bobs
 
 document.querySelectorAll('.sel-card').forEach((card) => {
   card.addEventListener('click', () => {
-    const tank = card.getAttribute('data-tank');
-    if (tank === 'tiger' || tank === 'kv1' || tank === 'sherman' || tank === 't34' ||
-        tank === 'su152' || tank === 'bobsemple') {
-      startGame(tank);
+    const nation = card.getAttribute('data-nation');
+    if (nation === 'germany' || nation === 'usa' || nation === 'ussr') {
+      startGame(nation);
     }
   });
 });
+// Enemy count selector
+document.querySelectorAll('.sel-count').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    enemyCount = Number(btn.getAttribute('data-count'));
+    document.querySelectorAll('.sel-count').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+// ── Name labels + per-tank health bars ─────────────────────
+const nameLabels = new Map<Tank, HTMLElement>();
+function createLabel(tank: Tank): void {
+  const el = document.createElement('div');
+  el.className = 'tank-label';
+  el.innerHTML = `
+    <div class="tank-label-name"></div>
+    <div class="tank-label-hp"><div class="tank-label-hp-fill"></div></div>
+  `;
+  document.body.appendChild(el);
+  nameLabels.set(tank, el);
+}
+function removeLabel(tank: Tank): void {
+  const el = nameLabels.get(tank);
+  if (el) { el.remove(); nameLabels.delete(tank); }
+}
+function updateLabel(tank: Tank): void {
+  const el = nameLabels.get(tank);
+  if (!el) return;
+  if (!tank.alive || gameOver) { el.style.display = 'none'; return; }
+  const v = new THREE.Vector3();
+  tank.group.getWorldPosition(v);
+  v.y += tank.config.hullDimensions[1] + 1.4;
+  v.project(camera);
+  if (v.z > 1) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth}px`;
+  el.style.top = `${(-v.y * 0.5 + 0.5) * window.innerHeight}px`;
+
+  // Name + HP bar
+  const nameEl = el.querySelector('.tank-label-name') as HTMLElement;
+  nameEl.textContent = tank.name;
+  nameEl.style.color = tank === playerTank ? '#8cf' : '#f88';
+  const ratio = Math.max(0, tank.hp / tank.maxHp);
+  const fill = el.querySelector('.tank-label-hp-fill') as HTMLElement;
+  fill.style.width = `${ratio * 100}%`;
+  const r = Math.min(1, (1 - ratio) * 2);
+  const g = Math.min(1, ratio * 2);
+  fill.style.backgroundColor = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, 50)`;
+}
 
 // ── Raycaster for aim info ─────────────────────────────────
 const raycaster = new THREE.Raycaster();
-
 function findAimTarget(obj: THREE.Object3D): Tank | Block | null {
   let cur: THREE.Object3D | null = obj;
   while (cur) {
@@ -158,7 +253,6 @@ let SPEED = BASE_SPEED;
 const TURN_SPEED = 2;
 let speedBoostTimer = 0;
 let enemiesDestroyed = 0;
-let enemyReloadTimer = 4;
 let gameOver = false;
 const enemyShells: Shell[] = [];
 
@@ -177,18 +271,10 @@ let upgradePanelOpen = false;
 function applyUpgrade(id: string): void {
   const lvl = upgradeLevels[id] ?? 1;
   switch (id) {
-    case 'damage':
-      playerTank.damageMult = 1 + 0.15 * lvl;
-      break;
-    case 'reload':
-      controls.setReloadMult(Math.max(0.5, 1 - 0.1 * lvl));
-      break;
-    case 'armor':
-      playerTank.armor = playerTank.baseArmor + 10 * lvl;
-      break;
-    case 'speed':
-      SPEED = BASE_SPEED * (1 + 0.1 * lvl);
-      break;
+    case 'damage': playerTank.damageMult = 1 + 0.15 * lvl; break;
+    case 'reload': controls.setReloadMult(Math.max(0.5, 1 - 0.1 * lvl)); break;
+    case 'armor': playerTank.armor = playerTank.baseArmor + 10 * lvl; break;
+    case 'speed': SPEED = BASE_SPEED * (1 + 0.1 * lvl); break;
     case 'hp':
       playerTank.maxHp += 100;
       playerTank.hp = Math.min(playerTank.maxHp, playerTank.hp + 100);
@@ -209,9 +295,43 @@ function buyUpgrade(id: string): void {
 
 function refreshUpgradePanel(): void {
   hud.refreshUpgrades(upgradePoints, UPGRADES, upgradeLevels);
+  const chain = EVOLUTION_CHAINS[playerNation];
+  const current = chain[currentTier];
+  const next = chain[currentTier + 1];
+  hud.setEvolutionInfo(
+    current?.name ?? '',
+    next ? { name: next.name, cost: next.cost } : null,
+    next ? upgradePoints >= next.cost : false,
+  );
 }
 
-// Toggle the upgrade panel with 'P'
+function evolve(): void {
+  const chain = EVOLUTION_CHAINS[playerNation];
+  const next = chain[currentTier + 1];
+  if (!next || upgradePoints < next.cost) return;
+  upgradePoints -= next.cost;
+  currentTier++;
+
+  const pos = playerTank.group.position;
+  const old = playerTank;
+  removeLabel(old);
+  playerConfig = TANK_BY_ID[next.id];
+  playerTank = new Tank(scene, physicsWorld, playerConfig, pos.x, pos.z);
+  playerTank.body.position.y = 15;
+  TankControls.setupBody(playerTank.body);
+  controls.bind(playerTank, scene, physicsWorld);
+  controls.currentShellIndex = 0; // reset shell selection for the new gun
+  old.dispose(scene, physicsWorld);
+  createLabel(playerTank);
+
+  for (const id of Object.keys(upgradeLevels)) {
+    if (upgradeLevels[id] > 0) applyUpgrade(id);
+  }
+  hud.setShell(playerConfig.shells[0].name, 0);
+  hud.showMessage(`⬆️ Evolved to ${playerConfig.name}!`);
+  refreshUpgradePanel();
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'p') {
     upgradePanelOpen = !upgradePanelOpen;
@@ -219,32 +339,38 @@ window.addEventListener('keydown', (e) => {
     if (upgradePanelOpen) refreshUpgradePanel();
   }
 });
-// Buy buttons
 document.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button[data-upg]') as HTMLButtonElement | null;
-  if (btn) buyUpgrade(btn.getAttribute('data-upg')!);
+  if (btn) {
+    buyUpgrade(btn.getAttribute('data-upg')!);
+    return;
+  }
+  if ((e.target as HTMLElement).closest('#upg-evolve-btn')) {
+    evolve();
+  }
 });
 
-// ── Kill tracking — fires directly from Tank.dispose (bulletproof) ──
+// ── Kill tracking — fires directly from Tank.dispose ──
 Tank.onTankDestroyed = (tank) => {
   if (gameOver) return;
-  if (tank === enemyTank) {
-    enemiesDestroyed++;
-    hud.incrementKills();
-    upgradePoints++;
-    hud.showMessage(`💀 Enemy destroyed! +1 upgrade point (P)`);
+  const e = enemies.find((en) => en.tank === tank);
+  if (e) {
+    removeLabel(tank);
+    // Only the player's kills award points (enemy-vs-enemy kills don't)
+    if (tank.lastHitBy === playerTank) {
+      const pts = e.config.tier ?? 1;
+      enemiesDestroyed++;
+      hud.incrementKills();
+      upgradePoints += pts;
+      hud.showMessage(`💀 ${e.config.name} destroyed! +${pts} pt${pts > 1 ? 's' : ''} (P)`);
+    }
   }
 };
 
 // ── Third-person aim marker ────────────────────────────────
 const aimMarker = new THREE.Mesh(
   new THREE.RingGeometry(0.35, 0.55, 24),
-  new THREE.MeshBasicMaterial({
-    color: 0xff6644,
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.DoubleSide,
-  }),
+  new THREE.MeshBasicMaterial({ color: 0xff6644, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
 );
 aimMarker.rotation.x = -Math.PI / 2;
 aimMarker.position.y = 0.05;
@@ -259,19 +385,15 @@ let elapsed = 0;
 function spawnConsumable(): void {
   const kinds: ConsumableKind[] = ['reload', 'heal', 'speed'];
   const kind = kinds[Math.floor(Math.random() * kinds.length)];
-  // Random position within the play area (avoid bases)
-  const x = (Math.random() - 0.5) * 80;
-  const z = (Math.random() - 0.5) * 80;
-  const c = new Consumable(scene, physicsWorld, new THREE.Vector3(x, 0.5, z), kind);
-  consumables.push(c);
+  const x = (Math.random() - 0.5) * 160;
+  const z = (Math.random() - 0.5) * 160;
+  consumables.push(new Consumable(scene, physicsWorld, new THREE.Vector3(x, 0.5, z), kind));
 }
 
 function applyConsumable(c: Consumable): void {
   switch (c.kind) {
     case 'reload':
       hud.showMessage('⚡ AMMO! Reload ready');
-      // Force reload to complete by advancing lastFireTime
-      // (controls.lastFireTime is private; use a public helper below)
       controls.forceReloadReady();
       break;
     case 'heal':
@@ -286,6 +408,103 @@ function applyConsumable(c: Consumable): void {
   c.destroy(scene, physicsWorld);
 }
 
+// ── Enemy target selection: nearest enemy, but always the player when close ──
+const PLAYER_AGGRO_RADIUS = 60;
+function pickEnemyTarget(e: EnemyState): Tank {
+  if (e.tank.group.position.distanceTo(playerTank.group.position) < PLAYER_AGGRO_RADIUS) {
+    return playerTank;
+  }
+  let best: Tank | null = null;
+  let bestD = Infinity;
+  for (const other of enemies) {
+    if (other === e || !other.tank.alive) continue;
+    const d = e.tank.group.position.distanceTo(other.tank.group.position);
+    if (d < bestD) { bestD = d; best = other.tank; }
+  }
+  return best ?? playerTank;
+}
+
+// ── Enemy AI (drive + fire) for one enemy ──────────────────
+function updateEnemyAI(e: EnemyState, dt: number): void {
+  if (!e.tank.alive || gameOver) return;
+  const body = e.tank.body;
+  const target = pickEnemyTarget(e);
+  const p = target.group.position;
+  const dx = p.x - body.position.x;
+  const dz = p.z - body.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist < 0.5) return;
+
+  // Turret tracks the target (turret tanks)
+  const toTarget = new THREE.Vector3(dx, 0, dz).normalize();
+  const eFwd = new THREE.Vector3(0, 0, -1);
+  eFwd.applyQuaternion(e.tank.group.quaternion);
+  const eAngle = Math.atan2(
+    eFwd.x * toTarget.z - eFwd.z * toTarget.x,
+    eFwd.x * toTarget.x + eFwd.z * toTarget.z,
+  );
+  if (!e.tank.isTD) e.tank.setTurretRotation(-eAngle);
+
+  // Movement: chase, strafe, or back off
+  let moveX: number, moveZ: number;
+  if (dist > 30) { moveX = dx / dist; moveZ = dz / dist; }
+  else if (dist < 14) { moveX = -dx / dist; moveZ = -dz / dist; }
+  else { moveX = -dz / dist; moveZ = dx / dist; }
+
+  // Rock avoidance
+  let steerX = moveX, steerZ = moveZ;
+  const probeX = body.position.x + moveX * 4;
+  const probeZ = body.position.z + moveZ * 4;
+  for (const rock of rockBodies) {
+    const rx = probeX - rock.position.x;
+    const rz = probeZ - rock.position.z;
+    if (rx * rx + rz * rz < 9) {
+      steerX = -moveZ; steerZ = moveX;
+      break;
+    }
+  }
+
+  const enemySpeed = 5;
+  body.velocity.x = steerX * enemySpeed;
+  body.velocity.z = steerZ * enemySpeed;
+  if (body.position.y < e.tank.config.hullDimensions[1] / 2) {
+    body.position.y = e.tank.config.hullDimensions[1] / 2;
+  }
+
+  const faceX = e.tank.isTD ? dx : steerX;
+  const faceZ = e.tank.isTD ? dz : steerZ;
+  turnHull(body, Math.atan2(faceX, faceZ), dt);
+
+  // Fire at the target with lead + ballistic pitch
+  e.reloadTimer -= dt;
+  if (e.reloadTimer <= 0) {
+    const shellDef = e.config.shells[0];
+    const tip = new THREE.Vector3();
+    e.tank.barrelTip.getWorldPosition(tip);
+    const pVel = target.body.velocity;
+    const ddx = p.x - tip.x;
+    const ddz = p.z - tip.z;
+    const d = Math.sqrt(ddx * ddx + ddz * ddz);
+    const flight = d / Math.max(shellDef.muzzleSpeed, 1);
+    const aimX = p.x + pVel.x * flight - body.position.x;
+    const aimZ = p.z + pVel.z * flight - body.position.z;
+    const aimDist = Math.sqrt(aimX * aimX + aimZ * aimZ);
+    if (aimDist > 0.5) {
+      turnHull(body, Math.atan2(aimX, aimZ), dt, 10);
+      if (!e.tank.isTD) {
+        const f = new CANNON.Vec3(0, 0, -1);
+        body.quaternion.vmult(f, f);
+        const ang = Math.atan2(f.x * aimZ - f.z * aimX, f.x * aimX + f.z * aimZ);
+        e.tank.setTurretRotation(-ang);
+      }
+      const drop = (9.82 * aimDist * aimDist) / (2 * shellDef.muzzleSpeed * shellDef.muzzleSpeed);
+      e.tank.setBarrelPitch(Math.atan2((p.y - tip.y) + drop, aimDist));
+    }
+    enemyShells.push(Shell.fire(scene, physicsWorld, e.tank, shellDef));
+    e.reloadTimer = e.config.reloadTime + Math.random() * 2;
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
 
@@ -293,10 +512,9 @@ function animate() {
   const fixedDt = 1 / 60;
   elapsed += fixedDt;
 
-  // Capture enemy HP BEFORE the physics step — collide events fire inside step()
-  const prevEnemyHp = enemyTank.hp;
+  // Capture enemy HP before the physics step (collide fires inside step)
+  for (const e of enemies) e.prevHp = e.tank.hp;
 
-  // Speed boost effect
   if (speedBoostTimer > 0) speedBoostTimer -= fixedDt;
   const activeSpeed = SPEED * (speedBoostTimer > 0 ? 1.6 : 1);
 
@@ -304,41 +522,35 @@ function animate() {
 
   controls.updateSniperAim(fixedDt);
   controls.updateTank(activeSpeed, TURN_SPEED, camera);
-  // Barrel pitch: sniper aim in sniper mode, auto-aim in third-person
   const pitch = controls.sniperMode ? controls.sniperAimY : controls.autoBarrelPitch;
   playerTank.setBarrelPitch(pitch);
   playerTank.update();
-  enemyTank.update(); // sync enemy body → mesh so it moves and is hittable
 
   controls.updateShells(fixedDt);
   updateParticles(scene, fixedDt);
 
-  // ── Consumables: spawn + pickup ───────────────────────
+  // ── Consumables ───────────────────────────────────────
   consumableSpawnTimer -= fixedDt;
-  if (consumableSpawnTimer <= 0 && consumables.length < 5) {
+  if (consumableSpawnTimer <= 0 && consumables.length < 6) {
     spawnConsumable();
-    consumableSpawnTimer = 12; // every ~12s, up to 5 on map
+    consumableSpawnTimer = 12;
   }
   for (let i = consumables.length - 1; i >= 0; i--) {
     const c = consumables[i];
     c.update(fixedDt, elapsed);
-    const dist = c.mesh.position.distanceTo(playerTank.group.position);
-    if (dist < 2.2) {
+    if (c.mesh.position.distanceTo(playerTank.group.position) < 2.2) {
       applyConsumable(c);
       consumables.splice(i, 1);
     }
   }
 
-  // ── Block cleanup ─────────────────────────────────────
+  // ── Blocks ────────────────────────────────────────────
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
     block.update();
     if (block.body.position.y < -10) {
       block.destroy(scene, physicsWorld);
       hud.incrementBlocks();
-      if (block.body.position.distanceTo(playerTank.body.position) < 10) {
-        followCam.triggerShake(0.1);
-      }
     }
     if (!block.alive) {
       blocks.splice(i, 1);
@@ -346,159 +558,60 @@ function animate() {
     }
   }
 
-  // ── Aim info ──────────────────────────────────────────
-  raycaster.setFromCamera(controls.mouseNDC, camera);
-  const hits = raycaster.intersectObjects(scene.children, true);
-
-  // ── Enemy movement AI + turret tracking ───────────────
-  const toPlayer = new THREE.Vector3()
-    .copy(playerTank.group.position).sub(enemyTank.group.position);
-  toPlayer.y = 0;
-  const distToPlayer = toPlayer.length();
-  if (distToPlayer > 0.1) {
-    toPlayer.normalize();
-    const eFwd = new THREE.Vector3(0, 0, -1);
-    eFwd.applyQuaternion(enemyTank.group.quaternion);
-    const eAngle = Math.atan2(
-      eFwd.x * toPlayer.z - eFwd.z * toPlayer.x,
-      eFwd.x * toPlayer.x + eFwd.z * toPlayer.z,
-    );
-    if (!enemyTank.isTD) {
-      enemyTank.setTurretRotation(-eAngle);
-    }
-  }
-
-  // ── Enemy drives around (velocity-based so physics keeps it grounded) ──
-  if (enemyTank.alive && !gameOver) {
-    const body = enemyTank.body;
-    const dx = playerTank.group.position.x - body.position.x;
-    const dz = playerTank.group.position.z - body.position.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-
-    // Movement decision: approach when far, strafe mid-range, back off when close
-    let moveX: number, moveZ: number;
-    if (dist > 25) {
-      moveX = dx / dist; moveZ = dz / dist;      // chase
-    } else if (dist < 12) {
-      moveX = -dx / dist; moveZ = -dz / dist;    // back off
+  // ── Enemy AI + respawn + hit markers ──────────────────
+  let nearestEnemy: Tank | null = null;
+  let nearestDist = Infinity;
+  for (const e of enemies) {
+    if (e.tank.alive) {
+      e.tank.update();
+      updateEnemyAI(e, fixedDt);
+      const d = e.tank.group.position.distanceTo(playerTank.group.position);
+      if (d < nearestDist) { nearestDist = d; nearestEnemy = e.tank; }
+      if (e.tank.hp < e.prevHp) {
+        hud.showHitMarker();
+        followCam.triggerShake(0.15);
+      }
     } else {
-      moveX = -dz / dist; moveZ = dx / dist;     // strafe around
-    }
-
-    const enemySpeed = 5;
-    // Obstacle avoidance: steer around rocks ahead of the movement direction
-    let steerX = moveX, steerZ = moveZ;
-    const lookAhead = 4;
-    const probeX = body.position.x + moveX * lookAhead;
-    const probeZ = body.position.z + moveZ * lookAhead;
-    for (const rock of rockBodies) {
-      const rx = probeX - rock.position.x;
-      const rz = probeZ - rock.position.z;
-      const rockR = 3;
-      if (rx * rx + rz * rz < rockR * rockR) {
-        // Steer perpendicular to avoid the rock
-        steerX = -moveZ;
-        steerZ = moveX;
-        break;
+      // Respawn this enemy after a delay
+      if (e.respawnTimer < 0) e.respawnTimer = 3;
+      e.respawnTimer -= fixedDt;
+      if (e.respawnTimer <= 0) {
+        const old = e.tank;
+        spawnEnemy(e);
+        const idx = aimables.indexOf(old);
+        if (idx >= 0) aimables[idx] = e.tank;
       }
     }
-
-    // Set velocity (not position) so the solver maintains ground contact
-    body.velocity.x = steerX * enemySpeed;
-    body.velocity.z = steerZ * enemySpeed;
-    // Safety: never let the body sink below ground level
-    if (body.position.y < enemyTank.config.hullDimensions[1] / 2) {
-      body.position.y = enemyTank.config.hullDimensions[1] / 2;
-    }
-
-    // Hull faces movement direction; TDs face the player to aim
-    const faceX = enemyTank.isTD ? dx : steerX;
-    const faceZ = enemyTank.isTD ? dz : steerZ;
-    turnEnemyHull(Math.atan2(faceX, faceZ), fixedDt);
   }
 
-  if (enemyTank.hp < prevEnemyHp) {
-    hud.showHitMarker();
-    followCam.triggerShake(0.15);
-  }
-  // Kill tracking is handled via Tank.onTankDestroyed callback (above)
-
-  // ── Enemy AI: fire at the player ──────────────────────
-  if (enemyTank.alive && !gameOver) {
-    enemyReloadTimer -= fixedDt;
-    if (enemyReloadTimer <= 0) {
-      const shellDef = enemyConfig.shells[0];
-
-      // Aim at the LEAD position (where the player will be when the shell arrives)
-      const body = enemyTank.body;
-      const tip = new THREE.Vector3();
-      enemyTank.barrelTip.getWorldPosition(tip);
-      const pPos = playerTank.group.position;
-      const pVel = playerTank.body.velocity;
-      const ddx = pPos.x - tip.x;
-      const ddz = pPos.z - tip.z;
-      const dist = Math.sqrt(ddx * ddx + ddz * ddz);
-      const flight = dist / Math.max(shellDef.muzzleSpeed, 1);
-      const leadX = pPos.x + pVel.x * flight;
-      const leadZ = pPos.z + pVel.z * flight;
-
-      // Point the turret/hull at the lead position
-      const aimX = leadX - body.position.x;
-      const aimZ = leadZ - body.position.z;
-      const aimDist = Math.sqrt(aimX * aimX + aimZ * aimZ);
-      if (aimDist > 0.5) {
-        turnEnemyHull(Math.atan2(aimX, aimZ), 10 * fixedDt); // snap quickly
-        if (!enemyTank.isTD) {
-          const eFwd = new CANNON.Vec3(0, 0, -1);
-          body.quaternion.vmult(eFwd, eFwd);
-          const eAngle = Math.atan2(
-            eFwd.x * aimZ - eFwd.z * aimX,
-            eFwd.x * aimX + eFwd.z * aimZ,
-          );
-          enemyTank.setTurretRotation(-eAngle);
-        }
-      }
-
-      // Ballistic barrel pitch to compensate for shell drop
-      const drop = (9.82 * aimDist * aimDist) / (2 * shellDef.muzzleSpeed * shellDef.muzzleSpeed);
-      const pitch = Math.atan2((pPos.y - tip.y) + drop, aimDist);
-      enemyTank.setBarrelPitch(pitch);
-
-      // Fire
-      const shell = Shell.fire(scene, physicsWorld, enemyTank, shellDef);
-      enemyShells.push(shell);
-      enemyReloadTimer = enemyConfig.reloadTime + Math.random() * 2;
-    }
-  }
-
-  // ── Update enemy shells (sync + cleanup) ──────────────
+  // ── Enemy shells (sync + cleanup) ─────────────────────
   for (let i = enemyShells.length - 1; i >= 0; i--) {
     const s = enemyShells[i];
     s.update(fixedDt);
-    if (s.body.position.y < -5 || s.body.position.length() > 100) {
-      s.destroy();
-    }
-    if (!s.alive) {
-      enemyShells.splice(i, 1);
-    }
+    if (s.body.position.y < -5 || s.body.position.length() > 400) s.destroy();
+    if (!s.alive) enemyShells.splice(i, 1);
   }
 
-  // ── Enemy respawn ─────────────────────────────────────
-  if (!enemyTank.alive && respawnTimer < 0) {
-    respawnTimer = 3.0; // give the explosion a moment
-  } else if (respawnTimer >= 0) {
-    respawnTimer -= fixedDt;
-    if (respawnTimer <= 0) {
-      respawnTimer = -1;
-      spawnEnemy();
-    }
+  // ── Culling (rocks + enemies by distance) ─────────────
+  const pp = playerTank.group.position;
+  for (const m of rockMeshes) {
+    const dx = m.position.x - pp.x;
+    const dz = m.position.z - pp.z;
+    m.visible = dx * dx + dz * dz < 120 * 120;
+  }
+  for (const e of enemies) {
+    const dx = e.tank.group.position.x - pp.x;
+    const dz = e.tank.group.position.z - pp.z;
+    e.tank.group.visible = dx * dx + dz * dz < 150 * 150;
   }
 
+  // ── Aim info ──────────────────────────────────────────
+  raycaster.setFromCamera(controls.mouseNDC, camera);
+  const hits = raycaster.intersectObjects(scene.children, true);
   let aimInfo: AimInfo | null = null;
   for (const hit of hits) {
     const target = findAimTarget(hit.object);
     if (!target) continue;
-
     const tankFwd = new THREE.Vector3(0, 0, -1);
     const quat = new THREE.Quaternion().copy(playerTank.group.quaternion);
     const tAngle = playerTank.turret.rotation.y;
@@ -511,11 +624,8 @@ function animate() {
     const angleDeg = Math.acos(Math.min(cosAngle, 1)) * (180 / Math.PI);
 
     const armor = target instanceof Tank ? target.armor : target.armor;
-    // HEAT ignores angle (flat armor); AP/HE use effective armor
     const shell = controls.currentShell;
-    const effectiveArmor = shell.id === 'heat'
-      ? armor
-      : armor / Math.max(cosAngle, 0.05);
+    const effectiveArmor = shell.id === 'heat' ? armor : armor / Math.max(cosAngle, 0.05);
     const pen = shell.penetration;
     const penChance = pen / effectiveArmor;
 
@@ -531,46 +641,41 @@ function animate() {
   }
   hud.updateAimInfo(aimInfo);
 
-  // ── Third-person aim marker (ground aim point) ────────
+  // ── Aim marker ────────────────────────────────────────
   if (!controls.sniperMode && !gameOver) {
     const aimPoint = controls.getIntersection(camera);
-    if (aimPoint) {
-      aimMarker.position.set(aimPoint.x, 0.05, aimPoint.z);
-      aimMarker.visible = true;
-    } else {
-      aimMarker.visible = false;
-    }
+    aimMarker.visible = !!aimPoint;
+    if (aimPoint) aimMarker.position.set(aimPoint.x, 0.05, aimPoint.z);
   } else {
     aimMarker.visible = false;
   }
 
   followCam.mode = controls.sniperMode ? 'sniper' : 'third-person';
   followCam.update(playerTank, delta);
-
-  // Scope overlay + hide crosshair in sniper mode
   hud.setSniperMode(controls.sniperMode);
 
   hud.updateTank(playerTank);
-  hud.updateEnemyTank(enemyTank);
+  hud.updateEnemyTank(nearestEnemy);
   hud.updateReload(controls.reloadProgress, controls.reloadProgress >= 1);
   hud.updateMessage(fixedDt);
 
-  // ── Game over check ──────────────────────────────────
+  // ── Name labels ───────────────────────────────────────
+  updateLabel(playerTank);
+  for (const e of enemies) updateLabel(e.tank);
+
+  // ── Game over ─────────────────────────────────────────
   if (!gameOver && (!playerTank.alive || playerTank.hp <= 0)) {
     gameOver = true;
     hud.showGameOver(enemiesDestroyed);
     followCam.triggerShake(0.8);
   }
 
-  // ── Minimap ──────────────────────────────────────────
+  // ── Minimap ───────────────────────────────────────────
   if (!gameOver) {
     const pPos = playerTank.group.position;
-    const ePos = enemyTank.alive ? enemyTank.group.position : null;
-    const pAngle = Math.atan2(pPos.x, pPos.z);
-    const eAngle = ePos ? Math.atan2(ePos.x, ePos.z) : 0;
     hud.drawMinimap(
-      { x: pPos.x, z: pPos.z, angle: pAngle },
-      ePos ? { x: ePos.x, z: ePos.z, angle: eAngle } : null,
+      { x: pPos.x, z: pPos.z, angle: Math.atan2(pPos.x, pPos.z) },
+      nearestEnemy ? { x: nearestEnemy.group.position.x, z: nearestEnemy.group.position.z, angle: 0 } : null,
       { x: 0, z: 0 },
       consumables.map((c) => ({
         x: c.mesh.position.x,

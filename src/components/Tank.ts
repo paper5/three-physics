@@ -25,6 +25,8 @@ export class Tank {
   readonly turretArmor: number;
   /** Multiplier applied to shell damage fired by this tank (upgrades). */
   damageMult = 1;
+  /** The tank whose shell dealt the last damage to this one (kill attribution). */
+  lastHitBy: Tank | null = null;
   alive = true;
   readonly name: string;
   readonly isTiger: boolean;
@@ -45,7 +47,7 @@ export class Tank {
     this.baseArmor = config.hullArmor;
     this.sideArmor = config.sideArmor;
     this.turretArmor = config.turretArmor;
-    this.isTiger = config.id === 'tiger';
+    this.isTiger = config.id === 'tiger' || config.id === 'tiger2';
     this.isTD = config.hasTurret === false;
 
     this.group = new THREE.Group();
@@ -191,7 +193,7 @@ export class Tank {
       deck.position.set(0, hh + 0.04, hL * 0.28);
       this.group.add(deck);
 
-    } else if (config.id === 'sherman') {
+    } else if (config.id === 'sherman' || config.id === 'pershing') {
       // ── Sherman: rounded front hull + cast glacis ───────
       const glacis = new THREE.Mesh(
         new THREE.BoxGeometry(hW * 0.95, 0.3, 0.5),
@@ -364,7 +366,7 @@ export class Tank {
       lHatch.position.set(-tW * 0.15, tH / 2 + 0.06, tL * 0.2);
       this.turret.add(lHatch);
 
-    } else if (config.id === 'sherman') {
+    } else if (config.id === 'sherman' || config.id === 'pershing') {
       // Sherman: cast rounded turret
       const base = new THREE.Mesh(
         new THREE.CylinderGeometry(tW * 0.55, tW * 0.6, tH, 10),

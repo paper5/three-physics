@@ -50,6 +50,7 @@ export class HUD {
   private upgPanel: HTMLElement;
   private upgPtsEl: HTMLElement;
   private upgListEl: HTMLElement;
+  private upgEvolveEl: HTMLElement;
 
   constructor(container: HTMLElement = document.body) {
     // ── Minimap (top right) ───────────────────────────────
@@ -65,6 +66,7 @@ export class HUD {
     upg.id = 'hud-upgrades';
     upg.innerHTML = `
       <div class="upg-header">🔧 UPGRADES — <span id="upg-pts">0</span> pts</div>
+      <div id="upg-evolve"></div>
       <div id="upg-list"></div>
     `;
     upg.style.display = 'none';
@@ -72,6 +74,7 @@ export class HUD {
     this.upgPanel = upg;
     this.upgPtsEl = upg.querySelector('#upg-pts')!;
     this.upgListEl = upg.querySelector('#upg-list')!;
+    this.upgEvolveEl = upg.querySelector('#upg-evolve')!;
 
     // ── Game over overlay ─────────────────────────────────
     const go = document.createElement('div');
@@ -377,7 +380,7 @@ export class HUD {
     ctx.strokeStyle = 'rgba(120,160,90,0.4)';
     ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
 
-    const toPx = (v: number) => (v + 60) / 120 * size;
+    const toPx = (v: number) => (v + 120) / 240 * size;
 
     // Fortress blocks
     for (const w of wallPositions) {
@@ -424,6 +427,31 @@ export class HUD {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+  }
+
+  /** Render the evolution section of the upgrade panel. */
+  setEvolutionInfo(
+    currentName: string,
+    next: { name: string; cost: number } | null,
+    canAfford: boolean,
+  ): void {
+    if (!next) {
+      this.upgEvolveEl.innerHTML = `
+        <div class="upg-evolve">
+          <span class="upg-current">⭐ ${currentName}</span>
+          <span class="upg-max">MAX EVOLUTION</span>
+        </div>`;
+      return;
+    }
+    this.upgEvolveEl.innerHTML = `
+      <div class="upg-evolve">
+        <span class="upg-current">⭐ ${currentName}</span>
+        <span class="upg-arrow">→</span>
+        <span class="upg-next">${next.name}</span>
+      </div>
+      <button id="upg-evolve-btn" ${canAfford ? '' : 'disabled'}>
+        EVOLVE (${next.cost} pts)
+      </button>`;
   }
 
   get shellsFired(): number { return this._shellsFired; }

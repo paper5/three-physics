@@ -335,7 +335,7 @@ export class TankControls {
       // Destroy shells that fall below the world or travel too far
       if (
         shell.body.position.y < -5 ||
-        shell.body.position.length() > 100
+        shell.body.position.length() > 400
       ) {
         shell.destroy();
       }

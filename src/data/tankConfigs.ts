@@ -38,6 +38,8 @@ export interface TankConfig {
   reloadTime: number;  // seconds
   /** Available shell types for this tank. */
   shells: ShellDefinition[];
+  /** Kill value: 1 = starter/light, 2 = mid/heavy. Default 1. */
+  tier?: number;
 }
 
 const AP = (pen: number, dmg: number): ShellDefinition => ({
@@ -66,6 +68,7 @@ export const TIGER_I: TankConfig = {
   sideArmor: 80,
   turretArmor: 100,
   reloadTime: 3.8,
+  tier: 2,
   shells: [AP(120, 150), HE(30, 200, 2.0)],
 };
 
@@ -85,6 +88,7 @@ export const KV_1: TankConfig = {
   sideArmor: 75,
   turretArmor: 75,
   reloadTime: 3.0,
+  tier: 2,
   shells: [AP(80, 110), HE(28, 170, 2.5)],
 };
 
@@ -104,6 +108,7 @@ export const SHERMAN: TankConfig = {
   sideArmor: 38,
   turretArmor: 76,
   reloadTime: 3.4,
+  tier: 2,
   shells: [AP(105, 130), HE(32, 180, 2.0)],
 };
 
@@ -123,6 +128,7 @@ export const T34_85: TankConfig = {
   sideArmor: 45,
   turretArmor: 90,
   reloadTime: 3.5,
+  tier: 2,
   shells: [AP(120, 135), HE(35, 190, 2.2)],
 };
 
@@ -143,6 +149,7 @@ export const SU_152: TankConfig = {
   sideArmor: 60,
   turretArmor: 75,
   reloadTime: 8.0,
+  tier: 2,
   // A howitzer: no AP, big HE + HEAT
   shells: [HE(45, 350, 3.5), HEAT(130, 300)],
 };
@@ -163,6 +170,108 @@ export const BOB_SEMPLE: TankConfig = {
   sideArmor: 6,
   turretArmor: 8,
   reloadTime: 2.0,
+  tier: 2,
   // Just a machine gun — AP only
   shells: [AP(20, 30)],
+};
+
+// ── Starter tanks (tier 1) ─────────────────────────────────
+
+export const PZ4: TankConfig = {
+  id: 'pz4',
+  name: 'Panzer IV',
+  nation: 'Germany',
+
+  hullColor: 0x76766c,
+  turretColor: 0x6a6a60,
+  hullDimensions: [3.4, 0.8, 5.6],
+  turretDimensions: [2.2, 0.4, 2.2],
+  barrelLength: 3.0,
+
+  hp: 700,
+  hullArmor: 50,
+  sideArmor: 30,
+  turretArmor: 50,
+  reloadTime: 3.5,
+  shells: [AP(75, 90), HE(25, 120, 1.8)],
+};
+
+export const STUART: TankConfig = {
+  id: 'stuart',
+  name: 'M3 Stuart',
+  nation: 'USA',
+
+  hullColor: 0x5a6b3a,
+  turretColor: 0x4f5f33,
+  hullDimensions: [2.8, 0.7, 4.6],
+  turretDimensions: [1.8, 0.35, 1.8],
+  barrelLength: 2.2,
+
+  hp: 500,
+  hullArmor: 25,
+  sideArmor: 15,
+  turretArmor: 25,
+  reloadTime: 2.5,
+  shells: [AP(40, 45)],
+};
+
+export const T34_STARTER: TankConfig = {
+  id: 't34early',
+  name: 'T-34',
+  nation: 'USSR',
+
+  hullColor: 0x55602e,
+  turretColor: 0x4d5a2a,
+  hullDimensions: [3.4, 0.8, 5.8],
+  turretDimensions: [2.2, 0.4, 2.2],
+  barrelLength: 3.0,
+
+  hp: 650,
+  hullArmor: 45,
+  sideArmor: 40,
+  turretArmor: 45,
+  reloadTime: 3.6,
+  shells: [AP(70, 85), HE(22, 110, 1.8)],
+};
+
+// ── Late-war heavies (evolution tier 3) ────────────────────
+
+export const PERSHING: TankConfig = {
+  id: 'pershing',
+  name: 'M26 Pershing',
+  nation: 'USA',
+
+  hullColor: 0x5e6e3a,
+  turretColor: 0x55652f,
+  hullDimensions: [3.6, 0.85, 6.0],
+  turretDimensions: [2.4, 0.45, 2.4],
+  barrelLength: 3.6,
+
+  hp: 1100,
+  hullArmor: 102,
+  sideArmor: 76,
+  turretArmor: 114,
+  reloadTime: 3.6,
+  tier: 2,
+  shells: [AP(140, 170), HE(38, 210, 2.2)],
+};
+
+export const TIGER2: TankConfig = {
+  id: 'tiger2',
+  name: 'Tiger II',
+  nation: 'Germany',
+
+  hullColor: 0x6e6e66,
+  turretColor: 0x63635b,
+  hullDimensions: [4.4, 0.9, 6.8],
+  turretDimensions: [2.8, 0.5, 2.8],
+  barrelLength: 3.8,
+
+  hp: 1200,
+  hullArmor: 150,
+  sideArmor: 80,
+  turretArmor: 180,
+  reloadTime: 4.5,
+  tier: 2,
+  shells: [AP(170, 180), HE(45, 240, 2.0)],
 };
